@@ -3,6 +3,8 @@
 import sys
 import re
 
+import svnlib
+
 
 # The string that is used as a marker for "don't check me in!".  This
 # has to be written strangely to allow this file itself to be checked
@@ -11,12 +13,12 @@ MARKER_STRING = '@''@''@'
 
 
 class Check:
-    """A check that can be applied to a file."""
+    """A check that can be applied to a change."""
 
-    def __call__(self, file):
-        """Return True iff file passes test."""
+    def __call__(self, change):
+        """Return True iff change passes test."""
 
-        return 1
+        return True
 
 
 class TrailingWhitespaceCheck(Check):
@@ -27,9 +29,12 @@ class TrailingWhitespaceCheck(Check):
     def __init__(self):
         pass
 
-    def __call__(self, file):
-        if self.trailing_ws_re.search(file.get_text()):
-            sys.stderr.write('Trailing whitespace in %s\n' % (file,))
+    def __call__(self, change):
+        if not (isinstance(change, svnlib.Addition)
+                or isinstance(change, svnlib.Modification)):
+            return True
+        elif self.trailing_ws_re.search(change.get_new_text()):
+            sys.stderr.write('Trailing whitespace in %s\n' % (change.file,))
             return False
         else:
             return True
@@ -40,9 +45,12 @@ class LeadingWhitespaceCheck(Check):
 
     trailing_ws_re = re.compile(r'^[ \t]', re.MULTILINE)
 
-    def __call__(self, file):
-        if self.trailing_ws_re.search(file.get_text()):
-            sys.stderr.write('Trailing whitespace in %s\n' % (file,))
+    def __call__(self, change):
+        if not (isinstance(change, svnlib.Addition)
+                or isinstance(change, svnlib.Modification)):
+            return True
+        elif self.trailing_ws_re.search(change.get_new_text()):
+            sys.stderr.write('Trailing whitespace in %s\n' % (change.file,))
             return False
         else:
             return True
@@ -53,9 +61,12 @@ class BlankLineCheck(Check):
 
     blank_line_re = re.compile(r'^\n', re.MULTILINE)
 
-    def __call__(self, file):
-        if self.blank_line_re.search(file.get_text()):
-            sys.stderr.write('Blank line in %s\n' % (file,))
+    def __call__(self, change):
+        if not (isinstance(change, svnlib.Addition)
+                or isinstance(change, svnlib.Modification)):
+            return True
+        elif self.blank_line_re.search(change.get_new_text()):
+            sys.stderr.write('Blank line in %s\n' % (change.file,))
             return False
         else:
             return True
@@ -64,9 +75,12 @@ class BlankLineCheck(Check):
 class TabCheck(Check):
     """Don't allow any tab characters."""
 
-    def __call__(self, file):
-        if file.get_text().find('\t') != -1:
-            sys.stderr.write('Tab(s) in %s\n' % (file,))
+    def __call__(self, change):
+        if not (isinstance(change, svnlib.Addition)
+                or isinstance(change, svnlib.Modification)):
+            return True
+        elif change.get_new_text().find('\t') != -1:
+            sys.stderr.write('Tab(s) in %s\n' % (change.file,))
             return False
         else:
             return True
@@ -75,9 +89,12 @@ class TabCheck(Check):
 class CRCheck(Check):
     """Don't allow any carriage returns characters."""
 
-    def __call__(self, file):
-        if file.get_text().find('\r') != -1:
-            sys.stderr.write('Carriage return(s) in %s\n' % (file,))
+    def __call__(self, change):
+        if not (isinstance(change, svnlib.Addition)
+                or isinstance(change, svnlib.Modification)):
+            return True
+        elif change.get_new_text().find('\r') != -1:
+            sys.stderr.write('Carriage return(s) in %s\n' % (change.file,))
             return False
         else:
             return True
@@ -86,13 +103,19 @@ class CRCheck(Check):
 class UnterminatedLineCheck(Check):
     """Don't allow the last line to be unterminated."""
 
-    def __call__(self, file):
-        text = file.get_text()
-        if text and text[-1] != '\n':
-            sys.stderr.write('Last line of %s is unterminated\n' % (file,))
-            return False
-        else:
+    def __call__(self, change):
+        if not (isinstance(change, svnlib.Addition)
+                or isinstance(change, svnlib.Modification)):
             return True
+        else:
+            text = change.get_new_text()
+            if text and text[-1] != '\n':
+                sys.stderr.write(
+                    'Last line of %s is unterminated\n' % (change.file,)
+                    )
+                return False
+            else:
+                return True
 
 
 class MarkerStringCheck(Check):
@@ -103,11 +126,14 @@ class MarkerStringCheck(Check):
 
     """
 
-    def __call__(self, file):
-        if file.get_text().find(MARKER_STRING) != -1:
+    def __call__(self, change):
+        if not (isinstance(change, svnlib.Addition)
+                or isinstance(change, svnlib.Modification)):
+            return True
+        elif change.get_new_text().find(MARKER_STRING) != -1:
             sys.stderr.write(
                 'Marker string ("%s") found in %s\n'
-                % (MARKER_STRING, file,)
+                % (MARKER_STRING, change.file,)
                 )
             return False
         else:
@@ -124,10 +150,10 @@ class MultipleCheck(Check):
     def __init__(self, *checks):
         self.checks = checks
 
-    def __call__(self, file):
+    def __call__(self, change):
         retval = True
         for check in self.checks:
-            if not check(file):
+            if not check(change):
                 retval = False
 
         return retval
@@ -146,9 +172,9 @@ class PatternCheck(Check):
         self.regexp = re.compile(regexp)
         self.check = check
 
-    def __call__(self, file):
-        if self.regexp.match(file.filename):
-            return self.check(file)
+    def __call__(self, change):
+        if self.regexp.match(change.file.filename):
+            return self.check(change)
         else:
             return True
 
