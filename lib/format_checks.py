@@ -13,18 +13,97 @@ MARKER_STRING = '@''@''@'
 
 
 class Check:
-    """A check that can be applied to a change."""
+    """A check that can be applied to a change.
 
-    def __call__(self, change):
+    Checks can be combined with '~', '&', and '|'.
+
+    """
+
+    def __call__(self, change, silent=False):
         """Return True iff change passes test."""
 
         raise NotImplementedError()
+
+    def __invert__(self):
+        """The inverse of the original check.
+
+        This method is meant mostly for conditions.  Please note that
+        for checks, this might need to be overloaded to avoid error
+        output.
+
+        """
+
+        return CheckNot(self)
+
+    def __and__(self, other):
+        return CheckAnd(self, other)
+
+    def __or__(self, other):
+        return CheckOr(self, other)
+
+
+class SilentCheck(Check):
+    def __init__(self, check):
+        self.check = check
+
+    def __call__(self, change, silent=False):
+        return self.check(change, silent=True)
+
+
+class CheckNot(Check):
+    """A check that is the logical inverse of another check.
+
+    This is mostly intended to be used for conditions.
+
+    """
+
+    def __init__(self, check):
+        self.check = check
+
+    def __call__(self, change, silent=False):
+        return not self.check(change, silent)
+
+
+class CheckAnd(Check):
+    """A check that is the logical 'and' of other checks.
+
+    Checks are short-circuited.
+
+    """
+
+    def __init__(self, *checks):
+        self.checks = checks
+
+    def __call__(self, change, silent=False):
+        for check in self.checks:
+            if not check(change, silent):
+                return False
+
+        return True
+
+
+class CheckOr(Check):
+    """A check that is the logical 'or' of other checks.
+
+    Checks are short-circuited.
+
+    """
+
+    def __init__(self, *checks):
+        self.checks = checks
+
+    def __call__(self, change, silent=False):
+        for check in self.checks:
+            if check(change, silent):
+                return True
+
+        return False
 
 
 class TextCheck(Check):
     """A Check that is purely based on the text of the file."""
 
-    def __call__(self, change):
+    def __call__(self, change, silent=False):
         if isinstance(change, svnlib.Addition):
             ok = self.check_text(change.get_new_text())
         elif isinstance(change, svnlib.Modification):
@@ -32,7 +111,7 @@ class TextCheck(Check):
         else:
             ok = True
 
-        if not ok:
+        if not ok and not silent:
             sys.stderr.write(self.error_fmt % {'filename' : change.file})
 
         return ok
@@ -125,81 +204,132 @@ class MarkerStringCheck(TextCheck):
 class MultipleCheck(Check):
     """Apply the listed checks one after the other.
 
-    checks should be a sequence of Check objects.
+    checks should be a sequence of Check objects.  The result is True
+    iff all checks returned True (but without short-circuiting).
 
     """
 
     def __init__(self, *checks):
         self.checks = checks
 
-    def __call__(self, change):
+    def __call__(self, change, silent=False):
         ok = True
         for check in self.checks:
-            if not check(change):
+            if not check(change, silent):
                 ok = False
 
         return ok
 
 
 class PatternCheck(Check):
-    """Apply the specified check to all files whose names match regexp.
+    """A Condition that is based on a regexp-match of the change's filename."""
 
-    regexp -- a regexp pattern which is passed to re.match().
+    def __init__(self, regexp):
+        self.regexp = re.compile(regexp)
 
-    check -- a Check object.
+    def __call__(self, change, silent=False):
+        ok = bool(self.regexp.match(change.file.filename))
+
+        if not ok and not silent:
+            sys.stderr.write(
+                'File %s does not match %r\n'
+                % (change.file, self.regexp.pattern,)
+                )
+
+        return ok
+
+
+class MimeTypeCheck(Check):
+    """A Check that compares the file's mime type with a constant."""
+
+    def __init__(self, mime_type):
+        self.mime_type = mime_type
+
+    def __call__(self, change, silent=False):
+        mime_type = change.repository.get_mime_type(
+            change.commit, change.file.filename
+            )
+        ok = (mime_type == self.mime_type)
+
+        if not ok and not silent:
+            sys.stderr.write(
+                'Mime type of file %s should be %r\n'
+                % (change.file, self.mime_type,)
+                )
+
+        return ok
+
+
+def if_then(condition, check):
+    """If condition is met, apply check.
+
+    condition -- a Check object that will be evaluated silently.
+
+    check -- a Check object that will be evaluated only if condition
+    returns True.
+
+    This is the logical equivalent of 'condition -> check' or '~
+    condition | check', except that condition is evaluated silently.
 
     """
 
-    def __init__(self, regexp, check):
-        self.regexp = re.compile(regexp)
-        self.check = check
+    return SilentCheck(~condition) | check
 
-    def __call__(self, change):
-        if self.regexp.match(change.file.filename):
-            return self.check(change)
-        else:
-            return True
-
-
-thoroughcheck = MultipleCheck(
-    TrailingWhitespaceCheck(),
-    TabCheck(),
-    CRCheck(),
-    UnterminatedLineCheck(),
-    MarkerStringCheck(),
-    )
 
 allchecks = MultipleCheck(
-    # Java source files:
-    PatternCheck(r'.*\.java$', thoroughcheck),
+    if_then(
+        # Java source files:
+        PatternCheck(r'.*\.java$')
 
-    # Python/Jython source files:
-    PatternCheck(r'.*\.py$', thoroughcheck),
+        # Python/Jython source files:
+        | PatternCheck(r'.*\.py$')
+        | MimeTypeCheck('text/x-python')
 
-    # C/C++ source files:
-    PatternCheck(r'.*\.(c|cc|cpp|h)$', thoroughcheck),
+        # C/C++ source files:
+        | PatternCheck(r'.*\.(c|cc|cpp|h)$')
 
-    # Java properties files:
-    PatternCheck(r'.*\.properties$', thoroughcheck),
+        # shell scripts:
+        | PatternCheck(r'.*\.sh$')
+        | MimeTypeCheck('application/x-sh')
 
-    # RPM spec files:
-    PatternCheck(r'.*\.spec$', thoroughcheck),
+        # Java properties files:
+        | PatternCheck(r'.*\.properties$')
+
+        # RPM spec files:
+        | PatternCheck(r'.*\.spec$')
+
+        ,
+        MultipleCheck(
+            TrailingWhitespaceCheck(),
+            TabCheck(),
+            CRCheck(),
+            UnterminatedLineCheck(),
+            MarkerStringCheck(),
+            ),
+        ),
 
     # Makefile-like files:
-    PatternCheck(r'Makefile(\.module)?$', MultipleCheck(
-        TrailingWhitespaceCheck(),
-        CRCheck(),
-        UnterminatedLineCheck(),
-        MarkerStringCheck(),
-        )),
+    if_then(
+        PatternCheck(r'Makefile(\.module)?$')
+        | MimeTypeCheck('text/x-makefile'),
+        MultipleCheck(
+            TrailingWhitespaceCheck(),
+            CRCheck(),
+            UnterminatedLineCheck(),
+            MarkerStringCheck(),
+            )
+        ),
 
     # Text files:
-    PatternCheck(r'.*\.txt$', MultipleCheck(
-        TrailingWhitespaceCheck(),
-        CRCheck(),
-        UnterminatedLineCheck(),
-        MarkerStringCheck(),
-        )),
+    if_then(
+        PatternCheck(r'.*\.txt$'),
+        MultipleCheck(
+            TrailingWhitespaceCheck(),
+            CRCheck(),
+            UnterminatedLineCheck(),
+            MarkerStringCheck(),
+            )
+        ),
     )
 
 
