@@ -239,6 +239,34 @@ class PatternCheck(Check):
         return ok
 
 
+class PropertyCheck(Check):
+    """A Condition that is based on a regexp-match of a Subversion property.
+
+    regexp is a regular expression pattern (as a string) which must
+    match the whole property value."""
+
+    def __init__(self, property, regexp):
+        self.property = property
+        self.regexp = re.compile('^' + regexp + '$')
+
+    def __call__(self, change, silent=False):
+        value = change.repository.get_property(
+            change.commit, change.file.filename, self.property
+            )
+        if value is None:
+            # Treat absent values the same as '':
+            value = ''
+        ok = bool(self.regexp.match(value))
+
+        if not ok and not silent:
+            sys.stderr.write(
+                'File %s, property %s does not match %r\n'
+                % (change.file, self.property, self.regexp.pattern,)
+                )
+
+        return ok
+
+
 class MimeTypeCheck(Check):
     """A Check that compares the file's mime type with a constant."""
 
@@ -276,60 +304,62 @@ def if_then(condition, check):
     return SilentCheck(~condition) | check
 
 
-allchecks = MultipleCheck(
-    if_then(
-        # Java source files:
-        PatternCheck(r'.*\.java$')
+allchecks = if_then(
+    ~PropertyCheck('ignore-checks', r'.+'),
+    MultipleCheck(
+        if_then(
+            # Java source files:
+            PatternCheck(r'.*\.java$')
 
-        # Python/Jython source files:
-        | PatternCheck(r'.*\.py$')
-        | MimeTypeCheck('text/x-python')
+            # Python/Jython source files:
+            | PatternCheck(r'.*\.py$')
+            | MimeTypeCheck('text/x-python')
 
-        # C/C++ source files:
-        | PatternCheck(r'.*\.(c|cc|cpp|h)$')
+            # C/C++ source files:
+            | PatternCheck(r'.*\.(c|cc|cpp|h)$')
 
-        # shell scripts:
-        | PatternCheck(r'.*\.sh$')
-        | MimeTypeCheck('application/x-sh')
+            # shell scripts:
+            | PatternCheck(r'.*\.sh$')
+            | MimeTypeCheck('application/x-sh')
 
-        # Java properties files:
-        | PatternCheck(r'.*\.properties$')
+            # Java properties files:
+            | PatternCheck(r'.*\.properties$')
 
-        # RPM spec files:
-        | PatternCheck(r'.*\.spec$')
-
-        ,
-        MultipleCheck(
-            TrailingWhitespaceCheck(),
-            TabCheck(),
-            CRCheck(),
-            UnterminatedLineCheck(),
-            MarkerStringCheck(),
+            # RPM spec files:
+            | PatternCheck(r'.*\.spec$')
+            ,
+            MultipleCheck(
+                TrailingWhitespaceCheck(),
+                TabCheck(),
+                CRCheck(),
+                UnterminatedLineCheck(),
+                MarkerStringCheck(),
+                ),
             ),
-        ),
 
-    # Makefile-like files:
-    if_then(
-        PatternCheck(r'Makefile(\.module)?$')
-        | MimeTypeCheck('text/x-makefile'),
-        MultipleCheck(
-            TrailingWhitespaceCheck(),
-            CRCheck(),
-            UnterminatedLineCheck(),
-            MarkerStringCheck(),
-            )
-        ),
+        # Makefile-like files:
+        if_then(
+            PatternCheck(r'Makefile(\.module)?$')
+            | MimeTypeCheck('text/x-makefile'),
+            MultipleCheck(
+                TrailingWhitespaceCheck(),
+                CRCheck(),
+                UnterminatedLineCheck(),
+                MarkerStringCheck(),
+                )
+            ),
 
-    # Text files:
-    if_then(
-        PatternCheck(r'.*\.txt$'),
-        MultipleCheck(
-            TrailingWhitespaceCheck(),
-            CRCheck(),
-            UnterminatedLineCheck(),
-            MarkerStringCheck(),
-            )
-        ),
+        # Text files:
+        if_then(
+            PatternCheck(r'.*\.txt$'),
+            MultipleCheck(
+                TrailingWhitespaceCheck(),
+                CRCheck(),
+                UnterminatedLineCheck(),
+                MarkerStringCheck(),
+                )
+            ),
+        )
     )
 
 
