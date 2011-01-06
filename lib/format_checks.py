@@ -147,14 +147,24 @@ class SilentCheck(ChangeCheck):
         return self.check(change, silent=True)
 
 
-class TextCheck(ChangeCheck):
-    """A ChangeCheck that is purely based on the text of the file."""
+class TextChangeCheck(ChangeCheck):
+    """A ChangeCheck that applies a TextCheck to any NewTextChanges."""
+
+    def __init__(self, check):
+        self.check = check
 
     def __call__(self, change, silent=False):
         if isinstance(change, svnlib.NewTextChange):
-            ok = self.check_text(change.get_new_text())
+            return self.check(change, change.get_new_text(), silent)
         else:
-            ok = True
+            return True
+
+
+class TextCheck(Check):
+    """A Check that is purely based on the text of the file."""
+
+    def __call__(self, change, text, silent=False):
+        ok = self.check_text(text)
 
         if not ok and not silent:
             sys.stderr.write(self.error_fmt % {'filename' : change.file})
@@ -354,35 +364,41 @@ allchecks = CommitChangeCheck(
                 # RPM spec files:
                 | PatternCheck(r'.*\.spec$')
                 ,
-                MultipleCheck(
-                    TrailingWhitespaceCheck(),
-                    TabCheck(),
-                    CRCheck(),
-                    UnterminatedLineCheck(),
-                    MarkerStringCheck(),
-                    ),
+                TextChangeCheck(
+                    MultipleCheck(
+                        TrailingWhitespaceCheck(),
+                        TabCheck(),
+                        CRCheck(),
+                        UnterminatedLineCheck(),
+                        MarkerStringCheck(),
+                        )
+                    )
                 ),
 
             # Makefile-like files:
             if_then(
                 PatternCheck(r'Makefile(\.module)?$')
                 | MimeTypeCheck('text/x-makefile'),
-                MultipleCheck(
-                    TrailingWhitespaceCheck(),
-                    CRCheck(),
-                    UnterminatedLineCheck(),
-                    MarkerStringCheck(),
+                TextChangeCheck(
+                    MultipleCheck(
+                        TrailingWhitespaceCheck(),
+                        CRCheck(),
+                        UnterminatedLineCheck(),
+                        MarkerStringCheck(),
+                        )
                     )
                 ),
 
             # Text files:
             if_then(
                 PatternCheck(r'.*\.txt$'),
-                MultipleCheck(
-                    TrailingWhitespaceCheck(),
-                    CRCheck(),
-                    UnterminatedLineCheck(),
-                    MarkerStringCheck(),
+                TextChangeCheck(
+                    MultipleCheck(
+                        TrailingWhitespaceCheck(),
+                        CRCheck(),
+                        UnterminatedLineCheck(),
+                        MarkerStringCheck(),
+                        )
                     )
                 ),
             )
