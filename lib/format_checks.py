@@ -12,6 +12,31 @@ import svnlib
 MARKER_STRING = '@''@''@'
 
 
+class CommitCheck:
+    """A check that can be applied to a full commit."""
+
+    def __call__(self, repository, commit, silent=False):
+        """Return True iff commit passes test."""
+
+        raise NotImplementedError()
+
+
+class CommitChangeCheck(CommitCheck):
+    """A CommitCheck that applies a ChangeCheck to each Change."""
+
+    def __init__(self, check):
+        self.check = check
+
+    def __call__(self, repository, commit, silent=False):
+        ok = True
+
+        for change in repository.get_changes(commit):
+            if not self.check(change, silent):
+                ok = False
+
+        return ok
+
+
 class ChangeCheck:
     """A check that can be applied to a Change.
 
@@ -302,61 +327,63 @@ def if_then(condition, check):
     return SilentCheck(~condition) | check
 
 
-allchecks = if_then(
-    ~PropertyCheck('ignore-checks', r'.+'),
-    MultipleCheck(
-        if_then(
-            # Java source files:
-            PatternCheck(r'.*\.java$')
+allchecks = CommitChangeCheck(
+    if_then(
+        ~PropertyCheck('ignore-checks', r'.+'),
+        MultipleCheck(
+            if_then(
+                # Java source files:
+                PatternCheck(r'.*\.java$')
 
-            # Python/Jython source files:
-            | PatternCheck(r'.*\.py$')
-            | MimeTypeCheck('text/x-python')
+                # Python/Jython source files:
+                | PatternCheck(r'.*\.py$')
+                | MimeTypeCheck('text/x-python')
 
-            # C/C++ source files:
-            | PatternCheck(r'.*\.(c|cc|cpp|h)$')
+                # C/C++ source files:
+                | PatternCheck(r'.*\.(c|cc|cpp|h)$')
 
-            # shell scripts:
-            | PatternCheck(r'.*\.sh$')
-            | MimeTypeCheck('application/x-sh')
+                # shell scripts:
+                | PatternCheck(r'.*\.sh$')
+                | MimeTypeCheck('application/x-sh')
 
-            # Java properties files:
-            | PatternCheck(r'.*\.properties$')
+                # Java properties files:
+                | PatternCheck(r'.*\.properties$')
 
-            # RPM spec files:
-            | PatternCheck(r'.*\.spec$')
-            ,
-            MultipleCheck(
-                TrailingWhitespaceCheck(),
-                TabCheck(),
-                CRCheck(),
-                UnterminatedLineCheck(),
-                MarkerStringCheck(),
+                # RPM spec files:
+                | PatternCheck(r'.*\.spec$')
+                ,
+                MultipleCheck(
+                    TrailingWhitespaceCheck(),
+                    TabCheck(),
+                    CRCheck(),
+                    UnterminatedLineCheck(),
+                    MarkerStringCheck(),
+                    ),
                 ),
-            ),
 
-        # Makefile-like files:
-        if_then(
-            PatternCheck(r'Makefile(\.module)?$')
-            | MimeTypeCheck('text/x-makefile'),
-            MultipleCheck(
-                TrailingWhitespaceCheck(),
-                CRCheck(),
-                UnterminatedLineCheck(),
-                MarkerStringCheck(),
-                )
-            ),
+            # Makefile-like files:
+            if_then(
+                PatternCheck(r'Makefile(\.module)?$')
+                | MimeTypeCheck('text/x-makefile'),
+                MultipleCheck(
+                    TrailingWhitespaceCheck(),
+                    CRCheck(),
+                    UnterminatedLineCheck(),
+                    MarkerStringCheck(),
+                    )
+                ),
 
-        # Text files:
-        if_then(
-            PatternCheck(r'.*\.txt$'),
-            MultipleCheck(
-                TrailingWhitespaceCheck(),
-                CRCheck(),
-                UnterminatedLineCheck(),
-                MarkerStringCheck(),
-                )
-            ),
+            # Text files:
+            if_then(
+                PatternCheck(r'.*\.txt$'),
+                MultipleCheck(
+                    TrailingWhitespaceCheck(),
+                    CRCheck(),
+                    UnterminatedLineCheck(),
+                    MarkerStringCheck(),
+                    )
+                ),
+            )
         )
     )
 
