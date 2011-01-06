@@ -12,8 +12,8 @@ import svnlib
 MARKER_STRING = '@''@''@'
 
 
-class Check:
-    """A check that can be applied to a change.
+class ChangeCheck:
+    """A check that can be applied to a Change.
 
     Checks can be combined with '~', '&', and '|'.
 
@@ -42,7 +42,7 @@ class Check:
         return CheckOr(self, other)
 
 
-class SilentCheck(Check):
+class SilentCheck(ChangeCheck):
     def __init__(self, check):
         self.check = check
 
@@ -50,7 +50,7 @@ class SilentCheck(Check):
         return self.check(change, silent=True)
 
 
-class CheckNot(Check):
+class CheckNot(ChangeCheck):
     """A check that is the logical inverse of another check.
 
     This is mostly intended to be used for conditions.
@@ -64,7 +64,7 @@ class CheckNot(Check):
         return not self.check(change, silent)
 
 
-class CheckAnd(Check):
+class CheckAnd(ChangeCheck):
     """A check that is the logical 'and' of other checks.
 
     Checks are short-circuited.
@@ -82,7 +82,7 @@ class CheckAnd(Check):
         return True
 
 
-class CheckOr(Check):
+class CheckOr(ChangeCheck):
     """A check that is the logical 'or' of other checks.
 
     Checks are short-circuited.
@@ -100,8 +100,8 @@ class CheckOr(Check):
         return False
 
 
-class TextCheck(Check):
-    """A Check that is purely based on the text of the file."""
+class TextCheck(ChangeCheck):
+    """A ChangeCheck that is purely based on the text of the file."""
 
     def __call__(self, change, silent=False):
         if isinstance(change, svnlib.NewTextChange):
@@ -199,10 +199,10 @@ class MarkerStringCheck(TextCheck):
         return text.find(MARKER_STRING) == -1
 
 
-class MultipleCheck(Check):
+class MultipleCheck(ChangeCheck):
     """Apply the listed checks one after the other.
 
-    checks should be a sequence of Check objects.  The result is True
+    checks should be a sequence of ChangeCheck objects.  The result is True
     iff all checks returned True (but without short-circuiting).
 
     """
@@ -219,8 +219,8 @@ class MultipleCheck(Check):
         return ok
 
 
-class PatternCheck(Check):
-    """A Condition that is based on a regexp-match of the change's filename."""
+class PatternCheck(ChangeCheck):
+    """A ChangeCheck that is based on a regexp match of the change's filename."""
 
     def __init__(self, regexp):
         self.regexp = re.compile(regexp)
@@ -237,8 +237,8 @@ class PatternCheck(Check):
         return ok
 
 
-class PropertyCheck(Check):
-    """A Condition that is based on a regexp-match of a Subversion property.
+class PropertyCheck(ChangeCheck):
+    """A ChangeCheck that is based on a regexp-match of a Subversion property.
 
     regexp is a regular expression pattern (as a string) which must
     match the whole property value."""
@@ -265,8 +265,8 @@ class PropertyCheck(Check):
         return ok
 
 
-class MimeTypeCheck(Check):
-    """A Check that compares the file's mime type with a constant."""
+class MimeTypeCheck(ChangeCheck):
+    """A ChangeCheck that compares the file's mime type with a constant."""
 
     def __init__(self, mime_type):
         self.mime_type = mime_type
@@ -289,10 +289,10 @@ class MimeTypeCheck(Check):
 def if_then(condition, check):
     """If condition is met, apply check.
 
-    condition -- a Check object that will be evaluated silently.
+    condition -- a ChangeCheck object that will be evaluated silently.
 
-    check -- a Check object that will be evaluated only if condition
-    returns True.
+    check -- a ChangeCheck object that will be evaluated only if
+        condition returns True.
 
     This is the logical equivalent of 'condition -> check' or '~
     condition | check', except that condition is evaluated silently.
