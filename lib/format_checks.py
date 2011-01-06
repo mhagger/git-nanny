@@ -110,6 +110,16 @@ class CommitCheck(Check):
         raise NotImplementedError()
 
 
+class LogMarkerStringCheck(CommitCheck):
+    """Don't allow a commit if the log message includes the marker string."""
+
+    def __call__(self, repository, commit, silent=False):
+        ok = MARKER_STRING not in repository.get_log_message(commit)
+        if not ok and not silent:
+            sys.stderr.write('Log message contains marker string ("%s")\n' % (MARKER_STRING,))
+        return ok
+
+
 class CommitChangeCheck(CommitCheck):
     """A CommitCheck that applies a ChangeCheck to each Change."""
 
@@ -339,70 +349,73 @@ def if_then(condition, check):
     return SilentCheck(~condition) | check
 
 
-allchecks = CommitChangeCheck(
-    if_then(
-        ~PropertyCheck('ignore-checks', r'.+'),
-        MultipleCheck(
-            if_then(
-                # Java source files:
-                PatternCheck(r'.*\.java$')
+allchecks = MultipleCheck(
+    LogMarkerStringCheck(),
+    CommitChangeCheck(
+        if_then(
+            ~PropertyCheck('ignore-checks', r'.+'),
+            MultipleCheck(
+                if_then(
+                    # Java source files:
+                    PatternCheck(r'.*\.java$')
 
-                # Python/Jython source files:
-                | PatternCheck(r'.*\.py$')
-                | MimeTypeCheck('text/x-python')
+                    # Python/Jython source files:
+                    | PatternCheck(r'.*\.py$')
+                    | MimeTypeCheck('text/x-python')
 
-                # C/C++ source files:
-                | PatternCheck(r'.*\.(c|cc|cpp|h)$')
+                    # C/C++ source files:
+                    | PatternCheck(r'.*\.(c|cc|cpp|h)$')
 
-                # shell scripts:
-                | PatternCheck(r'.*\.sh$')
-                | MimeTypeCheck('application/x-sh')
+                    # shell scripts:
+                    | PatternCheck(r'.*\.sh$')
+                    | MimeTypeCheck('application/x-sh')
 
-                # Java properties files:
-                | PatternCheck(r'.*\.properties$')
+                    # Java properties files:
+                    | PatternCheck(r'.*\.properties$')
 
-                # RPM spec files:
-                | PatternCheck(r'.*\.spec$')
-                ,
-                TextChangeCheck(
-                    MultipleCheck(
-                        TrailingWhitespaceCheck(),
-                        TabCheck(),
-                        CRCheck(),
-                        UnterminatedLineCheck(),
-                        MarkerStringCheck(),
+                    # RPM spec files:
+                    | PatternCheck(r'.*\.spec$')
+                    ,
+                    TextChangeCheck(
+                        MultipleCheck(
+                            TrailingWhitespaceCheck(),
+                            TabCheck(),
+                            CRCheck(),
+                            UnterminatedLineCheck(),
+                            MarkerStringCheck(),
+                            )
                         )
-                    )
-                ),
+                    ),
 
-            # Makefile-like files:
-            if_then(
-                PatternCheck(r'Makefile(\.module)?$')
-                | MimeTypeCheck('text/x-makefile'),
-                TextChangeCheck(
-                    MultipleCheck(
-                        TrailingWhitespaceCheck(),
-                        CRCheck(),
-                        UnterminatedLineCheck(),
-                        MarkerStringCheck(),
+                # Makefile-like files:
+                if_then(
+                    PatternCheck(r'Makefile(\.module)?$')
+                    | MimeTypeCheck('text/x-makefile'),
+                    TextChangeCheck(
+                        MultipleCheck(
+                            TrailingWhitespaceCheck(),
+                            CRCheck(),
+                            UnterminatedLineCheck(),
+                            MarkerStringCheck(),
+                            )
                         )
-                    )
-                ),
+                    ),
 
-            # Text files:
-            if_then(
-                PatternCheck(r'.*\.txt$'),
-                TextChangeCheck(
-                    MultipleCheck(
-                        TrailingWhitespaceCheck(),
-                        CRCheck(),
-                        UnterminatedLineCheck(),
-                        MarkerStringCheck(),
+                # Text files:
+                if_then(
+                    PatternCheck(r'.*\.txt$'),
+                    TextChangeCheck(
+                        MultipleCheck(
+                            TrailingWhitespaceCheck(),
+                            CRCheck(),
+                            UnterminatedLineCheck(),
+                            MarkerStringCheck(),
+                            )
                         )
-                    )
-                ),
+                    ),
+                )
             )
-        )
+        ),
     )
 
 
