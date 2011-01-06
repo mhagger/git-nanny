@@ -104,9 +104,7 @@ class TextCheck(Check):
     """A Check that is purely based on the text of the file."""
 
     def __call__(self, change, silent=False):
-        if isinstance(change, svnlib.Addition):
-            ok = self.check_text(change.get_new_text())
-        elif isinstance(change, svnlib.Modification):
+        if isinstance(change, svnlib.NewTextChange):
             ok = self.check_text(change.get_new_text())
         else:
             ok = True
