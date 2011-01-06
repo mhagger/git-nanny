@@ -81,6 +81,26 @@ class CheckOr(Check):
         return False
 
 
+class MultipleCheck(Check):
+    """Apply the listed checks one after the other.
+
+    checks should be a sequence of Check objects.  The result is True
+    iff all checks returned True (but without short-circuiting).
+
+    """
+
+    def __init__(self, *checks):
+        self.checks = checks
+
+    def __call__(self, *args, **kw):
+        ok = True
+        for check in self.checks:
+            if not check(*args, **kw):
+                ok = False
+
+        return ok
+
+
 class CommitCheck(Check):
     """A check that can be applied to a full commit."""
 
@@ -224,26 +244,6 @@ class MarkerStringCheck(TextCheck):
 
     def check_text(self, text):
         return text.find(MARKER_STRING) == -1
-
-
-class MultipleCheck(ChangeCheck):
-    """Apply the listed checks one after the other.
-
-    checks should be a sequence of ChangeCheck objects.  The result is True
-    iff all checks returned True (but without short-circuiting).
-
-    """
-
-    def __init__(self, *checks):
-        self.checks = checks
-
-    def __call__(self, change, silent=False):
-        ok = True
-        for check in self.checks:
-            if not check(change, silent):
-                ok = False
-
-        return ok
 
 
 class PatternCheck(ChangeCheck):
