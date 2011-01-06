@@ -12,7 +12,11 @@ import svnlib
 MARKER_STRING = '@''@''@'
 
 
-class CommitCheck:
+class Check(object):
+    pass
+
+
+class CommitCheck(Check):
     """A check that can be applied to a full commit."""
 
     def __call__(self, repository, commit, silent=False):
@@ -37,7 +41,7 @@ class CommitChangeCheck(CommitCheck):
         return ok
 
 
-class ChangeCheck:
+class ChangeCheck(Check):
     """A check that can be applied to a Change.
 
     Checks can be combined with '~', '&', and '|'.
