@@ -266,7 +266,7 @@ class MarkerStringCheck(TextCheck):
         return text.find(MARKER_STRING) == -1
 
 
-class PatternCheck(ChangeCheck):
+class FilenameCheck(ChangeCheck):
     """A ChangeCheck that is based on a regexp match of the change's filename."""
 
     def __init__(self, regexp):
@@ -357,24 +357,24 @@ allchecks = MultipleCheck(
             MultipleCheck(
                 if_then(
                     # Java source files:
-                    PatternCheck(r'.*\.java$')
+                    FilenameCheck(r'.*\.java$')
 
                     # Python/Jython source files:
-                    | PatternCheck(r'.*\.py$')
+                    | FilenameCheck(r'.*\.py$')
                     | MimeTypeCheck('text/x-python')
 
                     # C/C++ source files:
-                    | PatternCheck(r'.*\.(c|cc|cpp|h)$')
+                    | FilenameCheck(r'.*\.(c|cc|cpp|h)$')
 
                     # shell scripts:
-                    | PatternCheck(r'.*\.sh$')
+                    | FilenameCheck(r'.*\.sh$')
                     | MimeTypeCheck('application/x-sh')
 
                     # Java properties files:
-                    | PatternCheck(r'.*\.properties$')
+                    | FilenameCheck(r'.*\.properties$')
 
                     # RPM spec files:
-                    | PatternCheck(r'.*\.spec$')
+                    | FilenameCheck(r'.*\.spec$')
                     ,
                     TextChangeCheck(
                         MultipleCheck(
@@ -389,7 +389,7 @@ allchecks = MultipleCheck(
 
                 # Makefile-like files:
                 if_then(
-                    PatternCheck(r'Makefile(\.module)?$')
+                    FilenameCheck(r'Makefile(\.module)?$')
                     | MimeTypeCheck('text/x-makefile'),
                     TextChangeCheck(
                         MultipleCheck(
@@ -403,7 +403,7 @@ allchecks = MultipleCheck(
 
                 # Text files:
                 if_then(
-                    PatternCheck(r'.*\.txt$'),
+                    FilenameCheck(r'.*\.txt$'),
                     TextChangeCheck(
                         MultipleCheck(
                             TrailingWhitespaceCheck(),
