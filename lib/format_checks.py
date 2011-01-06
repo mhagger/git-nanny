@@ -13,7 +13,72 @@ MARKER_STRING = '@''@''@'
 
 
 class Check(object):
-    pass
+    def __invert__(self):
+        """The inverse of the original check.
+
+        This method is meant mostly for conditions.  Please note that
+        for checks, this might need to be overloaded to avoid error
+        output.
+
+        """
+
+        return CheckNot(self)
+
+    def __and__(self, other):
+        return CheckAnd(self, other)
+
+    def __or__(self, other):
+        return CheckOr(self, other)
+
+
+class CheckNot(Check):
+    """A check that is the logical inverse of another check.
+
+    This is mostly intended to be used for conditions.
+
+    """
+
+    def __init__(self, check):
+        self.check = check
+
+    def __call__(self, *args, **kw):
+        return not self.check(*args, **kw)
+
+
+class CheckAnd(Check):
+    """A check that is the logical 'and' of other checks.
+
+    Checks are short-circuited.
+
+    """
+
+    def __init__(self, *checks):
+        self.checks = checks
+
+    def __call__(self, *args, **kw):
+        for check in self.checks:
+            if not check(*args, **kw):
+                return False
+
+        return True
+
+
+class CheckOr(Check):
+    """A check that is the logical 'or' of other checks.
+
+    Checks are short-circuited.
+
+    """
+
+    def __init__(self, *checks):
+        self.checks = checks
+
+    def __call__(self, *args, **kw):
+        for check in self.checks:
+            if check(*args, **kw):
+                return True
+
+        return False
 
 
 class CommitCheck(Check):
@@ -53,23 +118,6 @@ class ChangeCheck(Check):
 
         raise NotImplementedError()
 
-    def __invert__(self):
-        """The inverse of the original check.
-
-        This method is meant mostly for conditions.  Please note that
-        for checks, this might need to be overloaded to avoid error
-        output.
-
-        """
-
-        return CheckNot(self)
-
-    def __and__(self, other):
-        return CheckAnd(self, other)
-
-    def __or__(self, other):
-        return CheckOr(self, other)
-
 
 class SilentCheck(ChangeCheck):
     def __init__(self, check):
@@ -77,56 +125,6 @@ class SilentCheck(ChangeCheck):
 
     def __call__(self, change, silent=False):
         return self.check(change, silent=True)
-
-
-class CheckNot(ChangeCheck):
-    """A check that is the logical inverse of another check.
-
-    This is mostly intended to be used for conditions.
-
-    """
-
-    def __init__(self, check):
-        self.check = check
-
-    def __call__(self, change, silent=False):
-        return not self.check(change, silent)
-
-
-class CheckAnd(ChangeCheck):
-    """A check that is the logical 'and' of other checks.
-
-    Checks are short-circuited.
-
-    """
-
-    def __init__(self, *checks):
-        self.checks = checks
-
-    def __call__(self, change, silent=False):
-        for check in self.checks:
-            if not check(change, silent):
-                return False
-
-        return True
-
-
-class CheckOr(ChangeCheck):
-    """A check that is the logical 'or' of other checks.
-
-    Checks are short-circuited.
-
-    """
-
-    def __init__(self, *checks):
-        self.checks = checks
-
-    def __call__(self, change, silent=False):
-        for check in self.checks:
-            if check(change, silent):
-                return True
-
-        return False
 
 
 class TextCheck(ChangeCheck):
