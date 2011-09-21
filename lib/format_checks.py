@@ -40,23 +40,7 @@ class Commit(object):
         raise NotImplementedError()
 
 
-class GitCommit(Commit):
-    def __init__(self, sha1):
-        self.sha1 = sha1
-
-    def get_logmsg(self):
-        cmd = ['git', 'cat-file', 'commit', self.sha1]
-        p = subprocess.Popen(
-            cmd,
-            stdout=subprocess.PIPE, stderr=subprocess.PIPE,
-            )
-        (out, err) = p.communicate()
-        retcode = p.wait()
-        if retcode or err:
-            sys.exit('Command failed: %s' % (' '.join(cmd),))
-        # The log message follows the first blank line:
-        return out[out.index('\n\n') + 2:]
-
+class AbstractGitCommit(Commit):
     def _read_contents(self, sha1):
         cmd = ['git', 'cat-file', 'blob', sha1]
         p = subprocess.Popen(
@@ -70,12 +54,13 @@ class GitCommit(Commit):
 
         return out
 
+    def _get_diff_command(self):
+        """Return the command to read the diff."""
+
+        raise NotImplementedError()
+
     def iter_changes(self):
-        cmd = [
-            'git', 'diff-tree',
-            '-r', '--raw', '--no-renames', '-z',
-            '%s^' % (self.sha1,), self.sha1,
-            ]
+        cmd = self._get_diff_command()
         p = subprocess.Popen(
             cmd,
             stdout=subprocess.PIPE, stderr=subprocess.PIPE,
@@ -87,7 +72,6 @@ class GitCommit(Commit):
 
         words = out.split('\0')
         del out
-        assert len(words) % 2 == 1
         words.pop()
 
         i = iter(words)
@@ -116,6 +100,40 @@ class GitCommit(Commit):
                     yield (src_path, None)
             else:
                 sys.exit('Unexpected status %s for file %s' % (status, src_path,))
+
+
+class GitIndex(AbstractGitCommit):
+    def _get_diff_command(self):
+        return [
+            'git', 'diff-index',
+            '--cached', '--raw', '--no-renames', '-z',
+            'HEAD',
+            ]
+
+
+class GitCommit(AbstractGitCommit):
+    def __init__(self, sha1):
+        self.sha1 = sha1
+
+    def get_logmsg(self):
+        cmd = ['git', 'cat-file', 'commit', self.sha1]
+        p = subprocess.Popen(
+            cmd,
+            stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+            )
+        (out, err) = p.communicate()
+        retcode = p.wait()
+        if retcode or err:
+            sys.exit('Command failed: %s' % (' '.join(cmd),))
+        # The log message follows the first blank line:
+        return out[out.index('\n\n') + 2:]
+
+    def _get_diff_command(self):
+        return [
+            'git', 'diff-tree',
+            '-r', '--raw', '--no-renames', '-z',
+            '%s^' % (self.sha1,), self.sha1,
+            ]
 
 
 class Check(object):
