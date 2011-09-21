@@ -4,8 +4,6 @@ import sys
 import re
 import subprocess
 
-import svnlib
-
 
 # The string that is used as a marker for "don't check me in!".  This
 # has to be written strangely to allow this file itself to be checked
@@ -31,6 +29,16 @@ class Commit(object):
 
         raise NotImplementedError()
 
+    def iter_changes(self):
+        """Iterate over the changes in this Commit.
+
+        Iterate over (filename, contents) for each file that was
+        changed in this commit, relative to its first parent.
+        Contents are the new file contents, as a string, or None if
+        the file was deleted."""
+
+        raise NotImplementedError()
+
 
 class GitCommit(Commit):
     def __init__(self, sha1):
@@ -48,6 +56,66 @@ class GitCommit(Commit):
             sys.exit('Command failed: %s' % (' '.join(cmd),))
         # The log message follows the first blank line:
         return out[out.index('\n\n') + 2:]
+
+    def _read_contents(self, sha1):
+        cmd = ['git', 'cat-file', 'blob', sha1]
+        p = subprocess.Popen(
+            cmd,
+            stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+            )
+        (out, err) = p.communicate()
+        retcode = p.wait()
+        if retcode or err:
+            sys.exit('Command failed: %s' % (' '.join(cmd),))
+
+        return out
+
+    def iter_changes(self):
+        cmd = [
+            'git', 'diff-tree',
+            '-r', '--raw', '--no-renames', '-z',
+            '%s^' % (self.sha1,), self.sha1,
+            ]
+        p = subprocess.Popen(
+            cmd,
+            stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+            )
+        (out, err) = p.communicate()
+        retcode = p.wait()
+        if retcode or err:
+            sys.exit('Command failed: %s' % (' '.join(cmd),))
+
+        words = out.split('\0')
+        del out
+        assert len(words) % 2 == 1
+        words.pop()
+
+        i = iter(words)
+        while True:
+            try:
+                prefix = i.next()
+            except StopIteration:
+                break
+            prefix = prefix[1:]
+
+            [src_mode, dst_mode, src_sha1, dst_sha1, status_score] = prefix.split(' ')
+            src_mode = int(src_mode, 8)
+            dst_mode = int(dst_mode, 8)
+            status = status_score[0]
+            src_path = i.next()
+            if status in ['A', 'M']:
+                contents = self._read_contents(dst_sha1)
+                yield (src_path, contents)
+            elif status in ['D']:
+                yield (src_path, None)
+            elif status == 'T':
+                if dst_mode & 0100000 == 0:
+                    contents = self._read_contents(dst_sha1)
+                    yield (src_path, contents)
+                else:
+                    yield (src_path, None)
+            else:
+                sys.exit('Unexpected status %s for file %s' % (status, src_path,))
 
 
 class Check(object):
@@ -158,73 +226,21 @@ class LogMarkerStringCheck(LogMessageCheck):
         return ok
 
 
-class CommitCheck(Check):
-    """A check that can be applied to a full commit."""
+class FileContentsCheck(Check):
+    """A Check that new file contents are OK."""
 
-    def __call__(self, repository, commit, silent=False):
-        """Return True iff commit passes test."""
-
+    def __call__(self, path, contents):
         raise NotImplementedError()
 
 
-class CommitChangeCheck(CommitCheck):
-    """A CommitCheck that applies a ChangeCheck to each Change."""
-
-    def __init__(self, check):
-        self.check = check
-
-    def __call__(self, repository, commit, silent=False):
-        ok = True
-
-        for change in repository.get_changes(commit):
-            if not self.check(change, silent):
-                ok = False
-
-        return ok
-
-
-class ChangeCheck(Check):
-    """A check that can be applied to a Change.
-
-    Checks can be combined with '~', '&', and '|'.
-
-    """
-
-    def __call__(self, change, silent=False):
-        """Return True iff change passes test."""
-
-        raise NotImplementedError()
-
-
-class SilentCheck(ChangeCheck):
-    def __init__(self, check):
-        self.check = check
-
-    def __call__(self, change, silent=False):
-        return self.check(change, silent=True)
-
-
-class TextChangeCheck(ChangeCheck):
-    """A ChangeCheck that applies a TextCheck to any NewTextChanges."""
-
-    def __init__(self, check):
-        self.check = check
-
-    def __call__(self, change, silent=False):
-        if isinstance(change, svnlib.NewTextChange):
-            return self.check(change, change.get_new_text(), silent)
-        else:
-            return True
-
-
-class TextCheck(Check):
+class TextCheck(FileContentsCheck):
     """A Check that is purely based on the text of the file."""
 
-    def __call__(self, change, text, silent=False):
-        ok = self.check_text(text)
+    def __call__(self, path, contents):
+        ok = contents is None or self.check_text(contents)
 
-        if not ok and not silent:
-            reporter.warning(self.error_fmt % {'filename' : change.file})
+        if not ok:
+            reporter.warning(self.error_fmt % {'filename' : path})
 
         return ok
 
@@ -301,7 +317,7 @@ class MarkerStringCheck(TextCheck):
     """Don't allow files to be checked in if they include the marker string.
 
     This string can be used to mark things that you don't ever want
-    checked in.  That way Subversion helps you remember :-)
+    checked in.  That way git helps you remember :-)
 
     """
 
@@ -313,25 +329,17 @@ class MarkerStringCheck(TextCheck):
         return text.find(MARKER_STRING) == -1
 
 
-class FilenameCheck(ChangeCheck):
+class FilenameCheck(FileContentsCheck):
     """A ChangeCheck that is based on a regexp match of the change's filename."""
 
     def __init__(self, regexp):
         self.regexp = re.compile(regexp)
 
-    def __call__(self, change, silent=False):
-        ok = bool(self.regexp.match(change.file.filename))
-
-        if not ok and not silent:
-            reporter.warning(
-                'File %s does not match %r'
-                % (change.file, self.regexp.pattern,)
-                )
-
-        return ok
+    def __call__(self, path, contents):
+        return bool(self.regexp.match(path))
 
 
-class PropertyCheck(ChangeCheck):
+class PropertyCheck(FileContentsCheck):
     """A ChangeCheck that is based on a regexp-match of a Subversion property.
 
     regexp is a regular expression pattern (as a string) which must
@@ -359,7 +367,7 @@ class PropertyCheck(ChangeCheck):
         return ok
 
 
-class MimeTypeCheck(ChangeCheck):
+class MimeTypeCheck(FileContentsCheck):
     """A ChangeCheck that compares the file's mime type with a constant."""
 
     def __init__(self, mime_type):
@@ -393,76 +401,72 @@ def if_then(condition, check):
 
     """
 
-    return SilentCheck(~condition) | check
+    return ~condition | check
 
 
-allchecks = MultipleCheck(
+log_message_checks = MultipleCheck(
     LogMarkerStringCheck(),
-    CommitChangeCheck(
-        if_then(
-            ~PropertyCheck('ignore-checks', r'.+'),
-            MultipleCheck(
-                if_then(
-                    # Java source files:
-                    FilenameCheck(r'.*\.java$')
+    )
 
-                    # Python/Jython source files:
-                    | FilenameCheck(r'.*\.py$')
-                    | MimeTypeCheck('text/x-python')
 
-                    # C/C++ source files:
-                    | FilenameCheck(r'.*\.(c|cc|cpp|h)$')
+file_contents_checks = MultipleCheck(
+    if_then(
+        CheckAnd(), ###~PropertyCheck('ignore-checks', r'.+'),
+        MultipleCheck(
+            if_then(
+                # Java source files:
+                FilenameCheck(r'.*\.java$')
 
-                    # shell scripts:
-                    | FilenameCheck(r'.*\.sh$')
-                    | MimeTypeCheck('application/x-sh')
+                # Python/Jython source files:
+                | FilenameCheck(r'.*\.py$')
+                ###| MimeTypeCheck('text/x-python')
 
-                    # Java properties files:
-                    | FilenameCheck(r'.*\.properties$')
+                # C/C++ source files:
+                | FilenameCheck(r'.*\.(c|cc|cpp|h)$')
 
-                    # RPM spec files:
-                    | FilenameCheck(r'.*\.spec$')
-                    ,
-                    TextChangeCheck(
-                        MultipleCheck(
-                            TrailingWhitespaceCheck(),
-                            TabCheck(),
-                            CRCheck(),
-                            UnterminatedLineCheck(),
-                            MarkerStringCheck(),
-                            )
-                        )
-                    ),
+                # shell scripts:
+                | FilenameCheck(r'.*\.sh$')
+                ###| MimeTypeCheck('application/x-sh')
 
-                # Makefile-like files:
-                if_then(
-                    FilenameCheck(r'Makefile(\.module)?$')
-                    | MimeTypeCheck('text/x-makefile'),
-                    TextChangeCheck(
-                        MultipleCheck(
-                            TrailingWhitespaceCheck(),
-                            CRCheck(),
-                            UnterminatedLineCheck(),
-                            MarkerStringCheck(),
-                            )
-                        )
-                    ),
+                # Java properties files:
+                | FilenameCheck(r'.*\.properties$')
 
-                # Text files:
-                if_then(
-                    FilenameCheck(r'.*\.txt$'),
-                    TextChangeCheck(
-                        MultipleCheck(
-                            TrailingWhitespaceCheck(),
-                            CRCheck(),
-                            UnterminatedLineCheck(),
-                            MarkerStringCheck(),
-                            )
-                        )
-                    ),
-                )
+                # RPM spec files:
+                | FilenameCheck(r'.*\.spec$')
+                ,
+                MultipleCheck(
+                    TrailingWhitespaceCheck(),
+                    TabCheck(),
+                    CRCheck(),
+                    UnterminatedLineCheck(),
+                    MarkerStringCheck(),
+                    )
+                ),
+
+            # Makefile-like files:
+            if_then(
+                FilenameCheck(r'Makefile(\.module)?$')
+                ,###| MimeTypeCheck('text/x-makefile'),
+                MultipleCheck(
+                    TrailingWhitespaceCheck(),
+                    CRCheck(),
+                    UnterminatedLineCheck(),
+                    MarkerStringCheck(),
+                    )
+                ),
+
+            # Text files:
+            if_then(
+                FilenameCheck(r'.*\.txt$'),
+                MultipleCheck(
+                    TrailingWhitespaceCheck(),
+                    CRCheck(),
+                    UnterminatedLineCheck(),
+                    MarkerStringCheck(),
+                    )
+                ),
             )
-        ),
+        )
     )
 
 
