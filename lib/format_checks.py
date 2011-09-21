@@ -12,6 +12,14 @@ import svnlib
 MARKER_STRING = '@''@''@'
 
 
+class Reporter(object):
+    def warning(self, msg):
+        sys.stderr.write(msg + '\n')
+
+
+reporter = Reporter()
+
+
 class Check(object):
     def __invert__(self):
         """The inverse of the original check.
@@ -116,7 +124,7 @@ class LogMarkerStringCheck(CommitCheck):
     def __call__(self, repository, commit, silent=False):
         ok = MARKER_STRING not in repository.get_log_message(commit)
         if not ok and not silent:
-            sys.stderr.write('Log message contains marker string ("%s")\n' % (MARKER_STRING,))
+            reporter.warning('Log message contains marker string ("%s")' % (MARKER_STRING,))
         return ok
 
 
@@ -177,7 +185,7 @@ class TextCheck(Check):
         ok = self.check_text(text)
 
         if not ok and not silent:
-            sys.stderr.write(self.error_fmt % {'filename' : change.file})
+            reporter.warning(self.error_fmt % {'filename' : change.file})
 
         return ok
 
@@ -192,7 +200,7 @@ class TrailingWhitespaceCheck(TextCheck):
 
     trailing_ws_re = re.compile(r'[ \t]+$', re.MULTILINE)
 
-    error_fmt = 'Trailing whitespace in %(filename)s\n'
+    error_fmt = 'Trailing whitespace in %(filename)s'
 
     def __init__(self):
         pass
@@ -206,7 +214,7 @@ class LeadingWhitespaceCheck(TextCheck):
 
     trailing_ws_re = re.compile(r'^[ \t]', re.MULTILINE)
 
-    error_fmt = 'Leading whitespace in %(filename)s\n'
+    error_fmt = 'Leading whitespace in %(filename)s'
 
     def check_text(self, text):
         return not self.trailing_ws_re.search(text)
@@ -217,7 +225,7 @@ class BlankLineCheck(TextCheck):
 
     blank_line_re = re.compile(r'^\n', re.MULTILINE)
 
-    error_fmt = 'Blank line in %(filename)s\n'
+    error_fmt = 'Blank line in %(filename)s'
 
     def check_text(self, text):
         return not self.blank_line_re.search(text)
@@ -226,7 +234,7 @@ class BlankLineCheck(TextCheck):
 class TabCheck(TextCheck):
     """Don't allow any tab characters."""
 
-    error_fmt = 'Tab(s) in %(filename)s\n'
+    error_fmt = 'Tab(s) in %(filename)s'
 
     def check_text(self, text):
         return text.find('\t') == -1
@@ -235,7 +243,7 @@ class TabCheck(TextCheck):
 class CRCheck(TextCheck):
     """Don't allow any carriage returns characters."""
 
-    error_fmt = 'Carriage return(s) in %(filename)s\n'
+    error_fmt = 'Carriage return(s) in %(filename)s'
 
     def check_text(self, text):
         return text.find('\r') == -1
@@ -244,7 +252,7 @@ class CRCheck(TextCheck):
 class UnterminatedLineCheck(TextCheck):
     """Don't allow the last line to be unterminated."""
 
-    error_fmt = 'Last line of %(filename)s is unterminated\n'
+    error_fmt = 'Last line of %(filename)s is unterminated'
 
     def check_text(self, text):
         return (not text) or text[-1] == '\n'
@@ -258,7 +266,7 @@ class MarkerStringCheck(TextCheck):
 
     """
 
-    error_fmt = 'Marker string ("%s") found in %%(filename)s\n' % (
+    error_fmt = 'Marker string ("%s") found in %%(filename)s' % (
         MARKER_STRING,
         )
 
@@ -276,8 +284,8 @@ class FilenameCheck(ChangeCheck):
         ok = bool(self.regexp.match(change.file.filename))
 
         if not ok and not silent:
-            sys.stderr.write(
-                'File %s does not match %r\n'
+            reporter.warning(
+                'File %s does not match %r'
                 % (change.file, self.regexp.pattern,)
                 )
 
@@ -304,8 +312,8 @@ class PropertyCheck(ChangeCheck):
         ok = bool(self.regexp.match(value))
 
         if not ok and not silent:
-            sys.stderr.write(
-                'File %s, property %s does not match %r\n'
+            reporter.warning(
+                'File %s, property %s does not match %r'
                 % (change.file, self.property, self.regexp.pattern,)
                 )
 
@@ -325,8 +333,8 @@ class MimeTypeCheck(ChangeCheck):
         ok = (mime_type == self.mime_type)
 
         if not ok and not silent:
-            sys.stderr.write(
-                'Mime type of file %s should be %r\n'
+            reporter.warning(
+                'Mime type of file %s should be %r'
                 % (change.file, self.mime_type,)
                 )
 
