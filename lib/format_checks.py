@@ -329,6 +329,28 @@ class MarkerStringCheck(TextCheck):
         return text.find(MARKER_STRING) == -1
 
 
+class MergeConflictCheck(TextCheck):
+    """Don't allow files that appear to have merge conflict markers.
+
+    If allow_equals is passed to the constructor, then '=======' is
+    allowed (this can easily appear in a reStructuredText file)."""
+
+    merge_marker_re_1 = re.compile(r'^([\<\>\|])\1{6} ', re.MULTILINE)
+    merge_marker_re_2 = re.compile(r'^([\<\>\|])\1{6} |^={7}$', re.MULTILINE)
+
+    error_fmt = 'Unresolved merge found in %(filename)s'
+
+    def __init__(self, allow_equals=False):
+        if allow_equals:
+            self.merge_marker_re = self.merge_marker_re_1
+        else:
+            self.merge_marker_re = self.merge_marker_re_2
+
+    def check_text(self, text):
+        return not self.merge_marker_re.search(text)
+
+
+
 class FilenameCheck(FileContentsCheck):
     """A ChangeCheck that is based on a regexp match of the change's filename."""
 
@@ -440,6 +462,7 @@ file_contents_checks = MultipleCheck(
                     CRCheck(),
                     UnterminatedLineCheck(),
                     MarkerStringCheck(),
+                    MergeConflictCheck(),
                     )
                 ),
 
@@ -452,6 +475,7 @@ file_contents_checks = MultipleCheck(
                     CRCheck(),
                     UnterminatedLineCheck(),
                     MarkerStringCheck(),
+                    MergeConflictCheck(),
                     )
                 ),
 
@@ -463,6 +487,7 @@ file_contents_checks = MultipleCheck(
                     CRCheck(),
                     UnterminatedLineCheck(),
                     MarkerStringCheck(),
+                    MergeConflictCheck(allow_equals=True),
                     )
                 ),
             )
