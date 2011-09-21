@@ -2,6 +2,7 @@
 
 import sys
 import re
+import subprocess
 
 import svnlib
 
@@ -18,6 +19,35 @@ class Reporter(object):
 
 
 reporter = Reporter()
+
+
+class Commit(object):
+    def get_logmsg(self):
+        """Return the log message for this commit.
+
+        Return the log message for this commit as a single string.  If
+        a log message is not available for this type of Commit, raise
+        NotImplementedError."""
+
+        raise NotImplementedError()
+
+
+class GitCommit(Commit):
+    def __init__(self, sha1):
+        self.sha1 = sha1
+
+    def get_logmsg(self):
+        cmd = ['git', 'cat-file', 'commit', self.sha1]
+        p = subprocess.Popen(
+            cmd,
+            stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+            )
+        (out, err) = p.communicate()
+        retcode = p.wait()
+        if retcode or err:
+            sys.exit('Command failed: %s' % (' '.join(cmd),))
+        # The log message follows the first blank line:
+        return out[out.index('\n\n') + 2:]
 
 
 class Check(object):
@@ -109,6 +139,25 @@ class MultipleCheck(Check):
         return ok
 
 
+class LogMessageCheck(Check):
+    """A check that a log message is OK."""
+
+    def __call__(self, logmsg, silent=False):
+        """Return True iff commit passes test."""
+
+        raise NotImplementedError()
+
+
+class LogMarkerStringCheck(LogMessageCheck):
+    """Don't allow a log message that includes the marker string."""
+
+    def __call__(self, logmsg, silent=False):
+        ok = MARKER_STRING not in logmsg
+        if not ok and not silent:
+            reporter.warning('Log message contains marker string ("%s")' % (MARKER_STRING,))
+        return ok
+
+
 class CommitCheck(Check):
     """A check that can be applied to a full commit."""
 
@@ -116,16 +165,6 @@ class CommitCheck(Check):
         """Return True iff commit passes test."""
 
         raise NotImplementedError()
-
-
-class LogMarkerStringCheck(CommitCheck):
-    """Don't allow a commit if the log message includes the marker string."""
-
-    def __call__(self, repository, commit, silent=False):
-        ok = MARKER_STRING not in repository.get_log_message(commit)
-        if not ok and not silent:
-            reporter.warning('Log message contains marker string ("%s")' % (MARKER_STRING,))
-        return ok
 
 
 class CommitChangeCheck(CommitCheck):
