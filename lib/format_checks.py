@@ -41,6 +41,28 @@ class Commit(object):
 
 
 class AbstractGitCommit(Commit):
+    # The empty tree object seems to be understood intrinsically even
+    # when it is not present in the repository:
+    EMPTY_TREE_SHA1 = '4b825dc642cb6eb9a060e54bf8d69288fbee4904'
+
+    def _get_base(self, committish):
+        """Find a SHA1 that can be used as a tree for committish.
+
+        If committish doesn't exist, return the SHA1 of the empty
+        tree."""
+
+        p = subprocess.Popen(
+            ['git', 'rev-parse', '--verify', committish],
+            stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+            )
+        (out, err) = p.communicate()
+        retcode = p.wait()
+
+        if retcode:
+            return self.EMPTY_TREE_SHA1
+        else:
+            return committish
+
     def _read_contents(self, sha1):
         cmd = ['git', 'cat-file', 'blob', sha1]
         p = subprocess.Popen(
@@ -107,7 +129,7 @@ class GitIndex(AbstractGitCommit):
         return [
             'git', 'diff-index',
             '--cached', '--raw', '--no-renames', '-z',
-            'HEAD',
+            self._get_base('HEAD'),
             ]
 
 
@@ -132,7 +154,7 @@ class GitCommit(AbstractGitCommit):
         return [
             'git', 'diff-tree',
             '-r', '--raw', '--no-renames', '-z',
-            '%s^' % (self.sha1,), self.sha1,
+            self._get_base('%s^' % (self.sha1,)), self.sha1,
             ]
 
 
