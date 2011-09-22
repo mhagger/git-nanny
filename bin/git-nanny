@@ -1,0 +1,101 @@
+#! /usr/bin/python
+
+"""Configurable Git pre-commit checks."""
+
+usage = """\
+usage: %prog check-format [OPTIONS]
+
+Type '%prog CMD --help' for more information.
+"""
+
+import sys
+import os
+import subprocess
+import optparse
+
+sys.path.insert(
+    0,
+    os.path.join(
+        os.path.dirname(os.path.dirname(os.path.realpath(os.path.abspath(sys.argv[0])))),
+        'lib',
+        )
+    )
+
+import format_checks
+
+
+class Error(Exception):
+    pass
+
+
+def add_common_options(parser):
+    parser.add_option(
+        '--verbose', '-v', action='store_true', default=False,
+        help='Increase amount of informational output.',
+        )
+
+    parser.add_option(
+        '--debug', '-d', action='store_true', default=False,
+        help='Print a lot of informational output.',
+        )
+
+
+def process_common_options(options):
+    if options.debug:
+        options.verbose = options.debug
+
+    if options.debug:
+        print options
+
+
+FAILURE_MESSAGE = """\
+
+Your commit has been rejected because of the problems listed above.
+Please fix the errors and try again.
+"""
+
+def check_format(args):
+    if len(args) == 0:
+        commit = format_checks.GitIndex()
+    elif len(args) == 1:
+        [committish] = args
+        cmd = ['git', 'rev-parse', '--verify', committish]
+        p = subprocess.Popen(
+            cmd,
+            stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+            )
+        (out, err) = p.communicate()
+        retcode = p.wait()
+        if retcode or err:
+            sys.exit('Command failed: %s' % (' '.join(cmd),))
+        sha1 = out.strip()
+        commit = format_checks.GitCommit(sha1)
+    else:
+        parser.error('Require 0 or 1 argument')
+
+    if not format_checks.check_commit(commit):
+        raise Error(FAILURE_MESSAGE)
+
+
+def main(args):
+    while args:
+        arg = args.pop(0)
+        if arg == 'check-format':
+            try:
+                check_format(args)
+            except Exception, e:
+                sys.exit(str(e))
+            sys.exit(0)
+        elif arg in ['help', '--help', '-h']:
+            # Please note that --help doesn't work if invoked via "git
+            # nanny --help".
+            sys.stderr.write(usage.replace('%prog', 'git nanny'))
+            sys.exit(0)
+        else:
+            sys.exit('Unrecognized subcommand: %r' % (arg,))
+
+    sys.exit('Please specify a subcommand!\n%s' % (usage.replace('%prog', 'git nanny'),))
+
+
+main(sys.argv[1:])
+

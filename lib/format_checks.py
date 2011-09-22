@@ -553,3 +553,19 @@ file_contents_checks = if_then(
     )
 
 
+def check_commit(commit):
+    ok = True
+
+    try:
+        logmsg = commit.get_logmsg()
+    except NotImplementedError:
+        pass
+    else:
+        ok &= log_message_checks(logmsg)
+
+    for (path, contents, attributes) in commit.iter_changes():
+        ok &= file_contents_checks(path, contents, attributes)
+
+    return ok
+
+
