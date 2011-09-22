@@ -58,7 +58,17 @@ def check_format(args):
     parser = optparse.OptionParser(
         prog='git nanny check-format',
         description='Check that files have the correct format.',
-        usage='%prog [OPTIONS] [-- [FILENAME...]]',
+        usage='%prog [OPTIONS] [--all | [-- [FILENAME...]]]',
+        )
+
+    parser.add_option(
+        '--cached', action='store_true', default=False,
+        help='Check files from the index.',
+        )
+
+    parser.add_option(
+        '--all', action='store_true', default=False,
+        help='Check all files known to git.',
         )
 
     parser.add_option(
@@ -81,6 +91,24 @@ def check_format(args):
 
     (options, args) = parser.parse_args(args)
     process_common_options(options)
+
+    if options.all:
+        if filenames:
+            parser.error('Filenames may not be specified together with --all')
+        cmd = ['git', 'ls-files', '-z']
+        p = subprocess.Popen(
+            cmd,
+            stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+            )
+        (out, err) = p.communicate()
+        retcode = p.wait()
+        if retcode or err:
+            sys.exit('Command failed: %s' % (' '.join(cmd),))
+        filenames = [
+            filename
+            for filename in out.split('\0')
+            if filename
+            ]
 
     if len(args) == 0:
         commit = format_checks.GitIndex(filenames)
