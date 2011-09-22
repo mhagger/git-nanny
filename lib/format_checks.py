@@ -454,8 +454,26 @@ class AttributeCheck(FileContentsCheck):
     def __init__(self, property):
         self.property = property
 
+
+class AttributeSetCheck(AttributeCheck):
     def __call__(self, path, contents, attributes):
         return attributes.get(self.property, None)
+
+
+class AttributeValueCheck(AttributeCheck):
+    def __init__(self, property, pattern):
+        """Check if a gitattribute is set and matches a regular expression.
+
+        pattern is a regular expression pattern that must match the
+        entire property value.  If the property is not set or is True
+        or False, return False."""
+
+        AttributeCheck.__init__(self, property)
+        self.regexp = re.compile('^' + pattern + '$')
+
+    def __call__(self, path, contents, attributes):
+        value = attributes.get(self.property, None)
+        return isinstance(value, str) and self.regexp.match(value)
 
 
 class MimeTypeCheck(FileContentsCheck):
@@ -500,67 +518,38 @@ log_message_checks = MultipleCheck(
     )
 
 
-file_contents_checks = MultipleCheck(
-    if_then(
-        ~AttributeCheck('ignore-checks'),
-        MultipleCheck(
-            if_then(
-                # Java source files:
-                FilenameCheck(r'.*\.java$')
+class AttributeBasedCheck(FileContentsCheck):
+    """Do the checks that are configured by git attributes."""
 
-                # Python/Jython source files:
-                | FilenameCheck(r'.*\.py$')
-                ###| MimeTypeCheck('text/x-python')
+    named_checks = {
+        'check-ws' : None,
+        'check-trailing-ws' : TrailingWhitespaceCheck(),
+        'check-tab' : TabCheck(),
+        'check-cr' : CRCheck(),
+        'check-unterminated' : UnterminatedLineCheck(),
+        'check-atatat' : MarkerStringCheck(),
+        'check-conflict' : MergeConflictCheck(),
+        'check-conflict-noequals' : MergeConflictCheck(allow_equals=True),
+        }
 
-                # C/C++ source files:
-                | FilenameCheck(r'.*\.(c|cc|cpp|h)$')
+    def __call__(self, path, contents, attributes):
+        ok = True
+        for (name, value) in attributes.iteritems():
+            if name.startswith('check-') and value:
+                try:
+                    check = self.named_checks[name]
+                except KeyError:
+                    sys.stderr.write('Warning: check %r is unknown!\n' % (name,))
+                else:
+                    if check is not None:
+                        ok &= check(path, contents, attributes)
 
-                # shell scripts:
-                | FilenameCheck(r'.*\.sh$')
-                ###| MimeTypeCheck('application/x-sh')
+        return ok
 
-                # Java properties files:
-                | FilenameCheck(r'.*\.properties$')
 
-                # RPM spec files:
-                | FilenameCheck(r'.*\.spec$')
-                ,
-                MultipleCheck(
-                    TrailingWhitespaceCheck(),
-                    TabCheck(),
-                    CRCheck(),
-                    UnterminatedLineCheck(),
-                    MarkerStringCheck(),
-                    MergeConflictCheck(),
-                    )
-                ),
-
-            # Makefile-like files:
-            if_then(
-                FilenameCheck(r'Makefile(\.module)?$')
-                ,###| MimeTypeCheck('text/x-makefile'),
-                MultipleCheck(
-                    TrailingWhitespaceCheck(),
-                    CRCheck(),
-                    UnterminatedLineCheck(),
-                    MarkerStringCheck(),
-                    MergeConflictCheck(),
-                    )
-                ),
-
-            # Text files:
-            if_then(
-                FilenameCheck(r'.*\.txt$'),
-                MultipleCheck(
-                    TrailingWhitespaceCheck(),
-                    CRCheck(),
-                    UnterminatedLineCheck(),
-                    MarkerStringCheck(),
-                    MergeConflictCheck(allow_equals=True),
-                    )
-                ),
-            )
-        )
+file_contents_checks = if_then(
+    ~AttributeSetCheck('ignore-checks'),
+    AttributeBasedCheck(),
     )
 
 
