@@ -55,8 +55,35 @@ Please fix the errors and try again.
 """
 
 def check_format(args):
+    parser = optparse.OptionParser(
+        prog='git nanny check-format',
+        description='Check that files have the correct format.',
+        usage='%prog [OPTIONS] [-- [FILENAME...]]',
+        )
+
+    parser.add_option(
+        '--verbose', '-v', action='store_true', default=False,
+        help='Increase amount of informational output.',
+        )
+
+    parser.add_option(
+        '--debug', '-d', action='store_true', default=False,
+        help='Print a lot of informational output.',
+        )
+
+    try:
+        sep = args.index('--')
+    except ValueError:
+        filenames = None
+    else:
+        filenames = args[sep + 1:] or None
+        del args[sep:]
+
+    (options, args) = parser.parse_args(args)
+    process_common_options(options)
+
     if len(args) == 0:
-        commit = format_checks.GitIndex()
+        commit = format_checks.GitIndex(filenames)
     elif len(args) == 1:
         [committish] = args
         cmd = ['git', 'rev-parse', '--verify', committish]
@@ -69,7 +96,7 @@ def check_format(args):
         if retcode or err:
             sys.exit('Command failed: %s' % (' '.join(cmd),))
         sha1 = out.strip()
-        commit = format_checks.GitCommit(sha1)
+        commit = format_checks.GitCommit(sha1, filenames)
     else:
         parser.error('Require 0 or 1 argument')
 

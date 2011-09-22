@@ -19,6 +19,10 @@ class Reporter(object):
 reporter = Reporter()
 
 
+class MissingContentsException(Exception):
+    pass
+
+
 class Commit(object):
     def get_logmsg(self):
         """Return the log message for this commit.
@@ -44,6 +48,9 @@ class AbstractGitCommit(Commit):
     # The empty tree object seems to be understood intrinsically even
     # when it is not present in the repository:
     EMPTY_TREE_SHA1 = '4b825dc642cb6eb9a060e54bf8d69288fbee4904'
+
+    def __init__(self, filenames=None):
+        self.filenames = filenames
 
     def _get_base(self, committish):
         """Find a SHA1 that can be used as a tree for committish.
@@ -72,7 +79,7 @@ class AbstractGitCommit(Commit):
         (out, err) = p.communicate()
         retcode = p.wait()
         if retcode or err:
-            sys.exit('Command failed: %s' % (' '.join(cmd),))
+            raise MissingContentsException('Command failed: %s' % (' '.join(cmd),))
 
         return out
 
@@ -162,16 +169,29 @@ class AbstractGitCommit(Commit):
         return attributes
 
     def iter_changes(self):
-        changes = list(self._iter_changes_simple())
-        filenames = [
-            filename
-            for (filename, contents) in changes
-            ]
-        attributes = self._get_attributes(filenames)
-        for (filename, contents) in changes:
-            yield (filename, contents, attributes[filename])
+        if self.filenames is not None:
+            attributes = self._get_attributes(self.filenames)
+            for filename in self.filenames:
+                try:
+                    contents = self._read_contents(':%s' % (filename,))
+                except MissingContentsException:
+                    contents = None
+                yield (filename, contents, attributes[filename])
+        else:
+            changes = list(self._iter_changes_simple())
+            filenames = [
+                filename
+                for (filename, contents) in changes
+                ]
+            attributes = self._get_attributes(filenames)
+            for (filename, contents) in changes:
+                yield (filename, contents, attributes[filename])
+
 
 class GitIndex(AbstractGitCommit):
+    def __init__(self, filenames=None):
+        AbstractGitCommit.__init__(self, filenames)
+
     def _get_diff_command(self):
         return [
             'git', 'diff-index',
@@ -181,7 +201,8 @@ class GitIndex(AbstractGitCommit):
 
 
 class GitCommit(AbstractGitCommit):
-    def __init__(self, sha1):
+    def __init__(self, sha1, filenames=None):
+        AbstractGitCommit.__init__(self, filenames)
         self.sha1 = sha1
 
     def get_logmsg(self):
