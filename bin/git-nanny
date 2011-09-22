@@ -110,8 +110,12 @@ def check_format(args):
             if filename
             ]
 
-    if len(args) == 0:
+    if options.cached:
+        if args:
+            parser.error('A revision may not be specified together with --cached')
         commit = format_checks.GitIndex(filenames)
+    elif not args:
+        commit = format_checks.GitWorkingTree(filenames)
     elif len(args) == 1:
         [committish] = args
         cmd = ['git', 'rev-parse', '--verify', committish]

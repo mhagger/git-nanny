@@ -70,18 +70,13 @@ class AbstractGitCommit(Commit):
         else:
             return committish
 
-    def _read_contents(self, sha1):
-        cmd = ['git', 'cat-file', 'blob', sha1]
-        p = subprocess.Popen(
-            cmd,
-            stdout=subprocess.PIPE, stderr=subprocess.PIPE,
-            )
-        (out, err) = p.communicate()
-        retcode = p.wait()
-        if retcode or err:
-            raise MissingContentsException('Command failed: %s' % (' '.join(cmd),))
+    def _read_contents(self, filename):
+        """Read the contents of filename in this commit.
 
-        return out
+        Return contents as a string.  If the file does not exist,
+        raise MissingContentsException."""
+
+        raise NotImplementedError()
 
     def _get_diff_command(self):
         """Return the command to read the diff."""
@@ -117,13 +112,13 @@ class AbstractGitCommit(Commit):
             status = status_score[0]
             src_path = i.next()
             if status in ['A', 'M']:
-                contents = self._read_contents(dst_sha1)
+                contents = self._read_contents(src_path)
                 yield (src_path, contents)
             elif status in ['D']:
                 yield (src_path, None)
             elif status == 'T':
                 if dst_mode & 0100000 == 0:
-                    contents = self._read_contents(dst_sha1)
+                    contents = self._read_contents(src_path)
                     yield (src_path, contents)
                 else:
                     yield (src_path, None)
@@ -173,7 +168,7 @@ class AbstractGitCommit(Commit):
             attributes = self._get_attributes(self.filenames)
             for filename in self.filenames:
                 try:
-                    contents = self._read_contents(':%s' % (filename,))
+                    contents = self._read_contents(filename)
                 except MissingContentsException:
                     contents = None
                 yield (filename, contents, attributes[filename])
@@ -198,6 +193,40 @@ class GitIndex(AbstractGitCommit):
             '--cached', '--raw', '--no-renames', '-z',
             self._get_base('HEAD'),
             ]
+
+    def _read_contents(self, filename):
+        cmd = ['git', 'cat-file', 'blob', ':%s' % (filename)]
+        p = subprocess.Popen(
+            cmd,
+            stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+            )
+        (out, err) = p.communicate()
+        retcode = p.wait()
+        if retcode or err:
+            raise MissingContentsException('Command failed: %s' % (' '.join(cmd),))
+
+        return out
+
+
+class GitWorkingTree(AbstractGitCommit):
+    def __init__(self, filenames=None):
+        AbstractGitCommit.__init__(self, filenames)
+
+    def _get_diff_command(self):
+        return [
+            'git', 'diff-index',
+            '--raw', '--no-renames', '-z',
+            self._get_base('HEAD'),
+            ]
+
+    def _read_contents(self, filename):
+        try:
+            f = open(filename, 'rb')
+        except IOError:
+            raise MissingContentsException('File %r does not exist' % (filename,))
+        contents = f.read()
+        f.close()
+        return contents
 
 
 class GitCommit(AbstractGitCommit):
@@ -224,6 +253,19 @@ class GitCommit(AbstractGitCommit):
             '-r', '--raw', '--no-renames', '-z',
             self._get_base('%s^' % (self.sha1,)), self.sha1,
             ]
+
+    def _read_contents(self, filename):
+        cmd = ['git', 'cat-file', 'blob', '%s:%s' % (self.sha1, filename)]
+        p = subprocess.Popen(
+            cmd,
+            stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+            )
+        (out, err) = p.communicate()
+        retcode = p.wait()
+        if retcode or err:
+            raise MissingContentsException('Command failed: %s' % (' '.join(cmd),))
+
+        return out
 
 
 class Check(object):
