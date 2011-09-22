@@ -32,8 +32,8 @@ class Commit(object):
     def iter_changes(self):
         """Iterate over the changes in this Commit.
 
-        Iterate over (filename, contents) for each file that was
-        changed in this commit, relative to its first parent.
+        Iterate over (filename, contents, attributes) for each file
+        that was changed in this commit, relative to its first parent.
         Contents are the new file contents, as a string, or None if
         the file was deleted."""
 
@@ -81,7 +81,7 @@ class AbstractGitCommit(Commit):
 
         raise NotImplementedError()
 
-    def iter_changes(self):
+    def _iter_changes_simple(self):
         cmd = self._get_diff_command()
         p = subprocess.Popen(
             cmd,
@@ -123,6 +123,53 @@ class AbstractGitCommit(Commit):
             else:
                 sys.exit('Unexpected status %s for file %s' % (status, src_path,))
 
+    attribute_re = re.compile(r'^(?P<filename>.*): (?P<name>\S+): (?P<value>.*)$')
+
+    def _get_attributes(self, filenames):
+        # A map {filename : {attribute : value}}
+        cmd = ['git', 'check-attr', '-z', '--all', '--stdin']
+        p = subprocess.Popen(
+            cmd,
+            stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+            )
+        (out, err) = p.communicate(
+            ''.join(
+                filename + '\0'
+                for filename in filenames
+                )
+            )
+        retcode = p.wait()
+        if retcode or err:
+            sys.exit('Command failed: %s' % (' '.join(cmd),))
+
+        attributes = dict((filename, {}) for filename in filenames)
+
+        for line in out.splitlines():
+            m = self.attribute_re.match(line)
+            filename = m.group('filename')
+            name = m.group('name')
+            value = m.group('value')
+
+            if value == 'unspecified':
+                continue
+            elif value == 'unset':
+                value = False
+            elif value == 'set':
+                value = True
+
+            attributes[filename][name] = value
+
+        return attributes
+
+    def iter_changes(self):
+        changes = list(self._iter_changes_simple())
+        filenames = [
+            filename
+            for (filename, contents) in changes
+            ]
+        attributes = self._get_attributes(filenames)
+        for (filename, contents) in changes:
+            yield (filename, contents, attributes[filename])
 
 class GitIndex(AbstractGitCommit):
     def _get_diff_command(self):
@@ -269,14 +316,14 @@ class LogMarkerStringCheck(LogMessageCheck):
 class FileContentsCheck(Check):
     """A Check that new file contents are OK."""
 
-    def __call__(self, path, contents):
+    def __call__(self, path, contents, attributes):
         raise NotImplementedError()
 
 
 class TextCheck(FileContentsCheck):
     """A Check that is purely based on the text of the file."""
 
-    def __call__(self, path, contents):
+    def __call__(self, path, contents, attributes):
         ok = contents is None or self.check_text(contents)
 
         if not ok:
@@ -397,36 +444,18 @@ class FilenameCheck(FileContentsCheck):
     def __init__(self, regexp):
         self.regexp = re.compile(regexp)
 
-    def __call__(self, path, contents):
+    def __call__(self, path, contents, attributes):
         return bool(self.regexp.match(path))
 
 
-class PropertyCheck(FileContentsCheck):
-    """A ChangeCheck that is based on a regexp-match of a Subversion property.
+class AttributeCheck(FileContentsCheck):
+    """A FileContentsCheck that checks a gitattribute."""
 
-    regexp is a regular expression pattern (as a string) which must
-    match the whole property value."""
-
-    def __init__(self, property, regexp):
+    def __init__(self, property):
         self.property = property
-        self.regexp = re.compile('^' + regexp + '$')
 
-    def __call__(self, change, silent=False):
-        value = change.repository.get_property(
-            change.commit, change.file.filename, self.property
-            )
-        if value is None:
-            # Treat absent values the same as '':
-            value = ''
-        ok = bool(self.regexp.match(value))
-
-        if not ok and not silent:
-            reporter.warning(
-                'File %s, property %s does not match %r'
-                % (change.file, self.property, self.regexp.pattern,)
-                )
-
-        return ok
+    def __call__(self, path, contents, attributes):
+        return attributes.get(self.property, None)
 
 
 class MimeTypeCheck(FileContentsCheck):
@@ -473,7 +502,7 @@ log_message_checks = MultipleCheck(
 
 file_contents_checks = MultipleCheck(
     if_then(
-        CheckAnd(), ###~PropertyCheck('ignore-checks', r'.+'),
+        ~AttributeCheck('ignore-checks'),
         MultipleCheck(
             if_then(
                 # Java source files:
