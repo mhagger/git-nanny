@@ -1,0 +1,5 @@
+[attr]check-ws check-trailing-ws check-tab check-cr check-unterminated check-atatat check-conflict
+
+[attr]type-python type=python text diff=python check-ws
+*.py type-python
+
