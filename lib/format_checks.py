@@ -376,14 +376,14 @@ class LogMarkerStringCheck(LogMessageCheck):
         return ok
 
 
-class FileContentsCheck(Check):
-    """A Check that new file contents are OK."""
+class FileCheck(Check):
+    """A Check applied to a single file."""
 
     def __call__(self, path, contents, attributes):
         raise NotImplementedError()
 
 
-class TextCheck(FileContentsCheck):
+class TextCheck(FileCheck):
     """A Check that is purely based on the text of the file."""
 
     def __call__(self, path, contents, attributes):
@@ -501,7 +501,7 @@ class MergeConflictCheck(TextCheck):
 
 
 
-class FilenameCheck(FileContentsCheck):
+class FilenameCheck(FileCheck):
     """A ChangeCheck that is based on a regexp match of the change's filename."""
 
     def __init__(self, regexp):
@@ -511,8 +511,8 @@ class FilenameCheck(FileContentsCheck):
         return bool(self.regexp.match(path))
 
 
-class AttributeCheck(FileContentsCheck):
-    """A FileContentsCheck that checks a gitattribute."""
+class AttributeCheck(FileCheck):
+    """A FileCheck that checks a gitattribute."""
 
     def __init__(self, property):
         self.property = property
@@ -539,7 +539,7 @@ class AttributeValueCheck(AttributeCheck):
         return isinstance(value, str) and self.regexp.match(value)
 
 
-class MimeTypeCheck(FileContentsCheck):
+class MimeTypeCheck(FileCheck):
     """A ChangeCheck that compares the file's mime type with a constant."""
 
     def __init__(self, mime_type):
@@ -581,7 +581,7 @@ log_message_checks = MultipleCheck(
     )
 
 
-class AttributeBasedCheck(FileContentsCheck):
+class AttributeBasedCheck(FileCheck):
     """Do the checks that are configured by git attributes."""
 
     named_checks = {
