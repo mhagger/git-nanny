@@ -3,6 +3,7 @@
 import sys
 import re
 import subprocess
+import itertools
 
 
 # The string that is used as a marker for "don't check me in!".  This
@@ -269,6 +270,11 @@ class GitCommit(AbstractGitCommit):
 
 
 class Check(object):
+    def get_needed_attribute_names(self):
+        """Return an iterable of names of attributes that this Check relies on."""
+
+        return []
+
     def __invert__(self):
         """The inverse of the original check.
 
@@ -297,6 +303,9 @@ class CheckNot(Check):
     def __init__(self, check):
         self.check = check
 
+    def get_needed_attribute_names(self):
+        return self.check.get_needed_attribute_names()
+
     def __call__(self, *args, **kw):
         return not self.check(*args, **kw)
 
@@ -306,6 +315,14 @@ class _CompoundCheck(Check):
 
     def __init__(self, *checks):
         self.checks = checks
+
+    def get_needed_attribute_names(self):
+        return itertools.chain(
+            *[
+                check.get_needed_attribute_names()
+                for check in self.checks
+                ]
+            )
 
 
 class CheckAnd(_CompoundCheck):
@@ -515,6 +532,9 @@ class AttributeCheck(FileCheck):
     def __init__(self, property):
         self.property = property
 
+    def get_needed_attribute_names(self):
+        return [self.property]
+
 
 class AttributeSetCheck(AttributeCheck):
     def __call__(self, path, contents, attributes):
@@ -592,6 +612,9 @@ class AttributeBasedCheck(FileCheck):
         'check-conflict' : MergeConflictCheck(),
         'check-conflict-noequals' : MergeConflictCheck(allow_equals=True),
         }
+
+    def get_needed_attribute_names(self):
+        return self.named_checks.iterkeys()
 
     def __call__(self, path, contents, attributes):
         ok = True
