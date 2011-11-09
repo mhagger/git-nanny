@@ -166,18 +166,19 @@ def pre_commit(args):
         raise Error(FAILURE_MESSAGE)
 
 
+subcommands = {
+    'check-format' : check_format,
+    'pre-commit' : pre_commit,
+    }
+
+
 def main(args):
     while args:
         arg = args.pop(0)
-        if arg == 'check-format':
+        subcommand = subcommands.get(arg)
+        if subcommand is not None:
             try:
-                check_format(args)
-            except Exception, e:
-                sys.exit(str(e))
-            sys.exit(0)
-        elif arg == 'pre-commit':
-            try:
-                pre_commit(args)
+                subcommand(args)
             except Exception, e:
                 sys.exit(str(e))
             sys.exit(0)
