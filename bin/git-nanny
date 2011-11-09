@@ -4,6 +4,7 @@
 
 usage = """\
 usage: %prog check-format [OPTIONS]
+       %prog pre-commit [OPTIONS]
 
 Type '%prog CMD --help' for more information.
 """
@@ -47,12 +48,6 @@ def process_common_options(options):
     if options.debug:
         print options
 
-
-FAILURE_MESSAGE = """\
-
-Your commit has been rejected because of the problems listed above.
-Please fix the errors and try again.
-"""
 
 def check_format(args):
     parser = optparse.OptionParser(
@@ -133,6 +128,41 @@ def check_format(args):
         parser.error('Require 0 or 1 argument')
 
     if not format_checks.check_commit(commit):
+        sys.exit(1)
+
+
+FAILURE_MESSAGE = """\
+
+Your commit has been rejected because of the problems listed above.
+Please fix the errors and try again.
+"""
+
+def pre_commit(args):
+    parser = optparse.OptionParser(
+        prog='git nanny pre-commit',
+        description='Run pre-commit checks.',
+        usage='%prog [OPTIONS]',
+        )
+
+    parser.add_option(
+        '--verbose', '-v', action='store_true', default=False,
+        help='Increase amount of informational output.',
+        )
+
+    parser.add_option(
+        '--debug', '-d', action='store_true', default=False,
+        help='Print a lot of informational output.',
+        )
+
+    (options, args) = parser.parse_args(args)
+    process_common_options(options)
+
+    if args:
+        parser.error('Unexpected arguments: %s' % (' '.join(args),))
+
+    commit = format_checks.GitIndex()
+
+    if not format_checks.check_commit(commit):
         raise Error(FAILURE_MESSAGE)
 
 
@@ -142,6 +172,12 @@ def main(args):
         if arg == 'check-format':
             try:
                 check_format(args)
+            except Exception, e:
+                sys.exit(str(e))
+            sys.exit(0)
+        elif arg == 'pre-commit':
+            try:
+                pre_commit(args)
             except Exception, e:
                 sys.exit(str(e))
             sys.exit(0)
