@@ -301,15 +301,19 @@ class CheckNot(Check):
         return not self.check(*args, **kw)
 
 
-class CheckAnd(Check):
+class _CompoundCheck(Check):
+    """A check that is based on one or more other checks."""
+
+    def __init__(self, *checks):
+        self.checks = checks
+
+
+class CheckAnd(_CompoundCheck):
     """A check that is the logical 'and' of other checks.
 
     Checks are short-circuited.
 
     """
-
-    def __init__(self, *checks):
-        self.checks = checks
 
     def __call__(self, *args, **kw):
         for check in self.checks:
@@ -319,15 +323,12 @@ class CheckAnd(Check):
         return True
 
 
-class CheckOr(Check):
+class CheckOr(_CompoundCheck):
     """A check that is the logical 'or' of other checks.
 
     Checks are short-circuited.
 
     """
-
-    def __init__(self, *checks):
-        self.checks = checks
 
     def __call__(self, *args, **kw):
         for check in self.checks:
@@ -337,16 +338,13 @@ class CheckOr(Check):
         return False
 
 
-class MultipleCheck(Check):
+class MultipleCheck(_CompoundCheck):
     """Apply the listed checks one after the other.
 
     checks should be a sequence of Check objects.  The result is True
     iff all checks returned True (but without short-circuiting).
 
     """
-
-    def __init__(self, *checks):
-        self.checks = checks
 
     def __call__(self, *args, **kw):
         ok = True
