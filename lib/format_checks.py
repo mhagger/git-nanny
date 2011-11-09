@@ -34,13 +34,14 @@ class Commit(object):
 
         raise NotImplementedError()
 
-    def iter_changes(self):
+    def iter_changes(self, attr_names):
         """Iterate over the changes in this Commit.
 
         Iterate over (filename, contents, attributes) for each file
         that was changed in this commit, relative to its first parent.
         Contents are the new file contents, as a string, or None if
-        the file was deleted."""
+        the file was deleted.  attr_names is an iterable over the
+        names of attributes that should be checked."""
 
         raise NotImplementedError()
 
@@ -128,9 +129,9 @@ class AbstractGitCommit(Commit):
 
     attribute_re = re.compile(r'^(?P<filename>.*): (?P<name>\S+): (?P<value>.*)$')
 
-    def _get_attributes(self, filenames):
+    def _get_attributes(self, filenames, attr_names):
         # A map {filename : {attribute : value}}
-        cmd = ['git', 'check-attr', '-z', '--all', '--stdin']
+        cmd = ['git', 'check-attr', '-z', '--stdin'] + attr_names + ['--']
         p = subprocess.Popen(
             cmd,
             stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
@@ -164,9 +165,9 @@ class AbstractGitCommit(Commit):
 
         return attributes
 
-    def iter_changes(self):
+    def iter_changes(self, attr_names):
         if self.filenames is not None:
-            attributes = self._get_attributes(self.filenames)
+            attributes = self._get_attributes(self.filenames, attr_names)
             for filename in self.filenames:
                 try:
                     contents = self._read_contents(filename)
@@ -179,7 +180,7 @@ class AbstractGitCommit(Commit):
                 filename
                 for (filename, contents) in changes
                 ]
-            attributes = self._get_attributes(filenames)
+            attributes = self._get_attributes(filenames, attr_names)
             for (filename, contents) in changes:
                 yield (filename, contents, attributes[filename])
 
@@ -647,7 +648,8 @@ def check_commit(commit):
     else:
         ok &= log_message_checks(logmsg)
 
-    for (path, contents, attributes) in commit.iter_changes():
+    attr_names = list(file_contents_checks.get_needed_attribute_names())
+    for (path, contents, attributes) in commit.iter_changes(attr_names=attr_names):
         ok &= file_contents_checks(path, contents, attributes)
 
     return ok
