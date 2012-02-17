@@ -53,7 +53,7 @@ def check_format(args):
     parser = optparse.OptionParser(
         prog='git nanny check-format',
         description='Check that files have the correct format.',
-        usage='%prog [OPTIONS] [--all | [-- [FILENAME...]]]',
+        usage='%prog [OPTIONS] [--cached | COMMITTISH] [--all | [-- [FILENAME...]]]',
         )
 
     parser.add_option(
