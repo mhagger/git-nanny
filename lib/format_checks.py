@@ -1,9 +1,37 @@
 """Check conformance to whitespace rules."""
 
 import sys
+import os
 import re
 import subprocess
 import itertools
+import tempfile
+
+
+def get_git_version():
+    VERSION_RE = re.compile(r'(?P<version>\d+(?:\.\d+)+)')
+    cmd = ['git', '--version']
+    p = subprocess.Popen(
+        cmd,
+        stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+        )
+    (out, err) = p.communicate()
+    retcode = p.wait()
+    if retcode or err:
+        sys.exit('Command failed: %s' % (' '.join(cmd),))
+
+    m = VERSION_RE.search(out)
+    if not m:
+        sys.exit('Could not read git version from output %r' % (out,))
+
+    return [
+        int(s)
+        for s in m.group('version').split('.')
+        ]
+
+
+GIT_VERSION = get_git_version()
+GIT_CHECK_ATTR_CACHED = GIT_VERSION >= [1, 7, 8]
 
 
 # The string that is used as a marker for "don't check me in!".  This
@@ -130,12 +158,9 @@ class AbstractGitCommit(Commit):
     attribute_re = re.compile(r'^(?P<filename>.*): (?P<name>\S+): (?P<value>.*)$')
 
     def _get_attributes(self, filenames, attr_names):
-        # A map {filename : {attribute : value}}
-        cmd = ['git', 'check-attr', '-z', '--stdin'] + attr_names + ['--']
-        p = subprocess.Popen(
-            cmd,
-            stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
-            )
+        """Return a map {filename : {attribute : value}}."""
+
+        p = self._get_attributes_pipe(attr_names)
         (out, err) = p.communicate(
             ''.join(
                 filename + '\0'
@@ -144,7 +169,7 @@ class AbstractGitCommit(Commit):
             )
         retcode = p.wait()
         if retcode or err:
-            sys.exit('Command failed: %s' % (' '.join(cmd),))
+            sys.exit('Command failed: git check-attr ...')
 
         attributes = dict((filename, {}) for filename in filenames)
 
@@ -189,6 +214,22 @@ class GitIndex(AbstractGitCommit):
     def __init__(self, filenames=None):
         AbstractGitCommit.__init__(self, filenames)
 
+    def _get_attributes_pipe(self, attr_names):
+        if GIT_CHECK_ATTR_CACHED:
+            cmd = ['git', 'check-attr', '--cached', '-z', '--stdin'] + attr_names + ['--']
+            return subprocess.Popen(
+                cmd,
+                stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+                )
+        else:
+            # "git check-attr" doesn't know --cached option; return
+            # options from working copy instead:
+            cmd = ['git', 'check-attr', '-z', '--stdin'] + attr_names + ['--']
+            return subprocess.Popen(
+                cmd,
+                stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+                )
+
     def _get_diff_command(self):
         return [
             'git', 'diff-index',
@@ -214,6 +255,13 @@ class GitWorkingTree(AbstractGitCommit):
     def __init__(self, filenames=None):
         AbstractGitCommit.__init__(self, filenames)
 
+    def _get_attributes_pipe(self, attr_names):
+        cmd = ['git', 'check-attr', '-z', '--stdin'] + attr_names + ['--']
+        return subprocess.Popen(
+            cmd,
+            stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+            )
+
     def _get_diff_command(self):
         return [
             'git', 'diff-index',
@@ -235,6 +283,27 @@ class GitCommit(AbstractGitCommit):
     def __init__(self, sha1, filenames=None):
         AbstractGitCommit.__init__(self, filenames)
         self.sha1 = sha1
+        self.indexfile = None
+
+    def __del__(self):
+        if self.indexfile:
+            os.remove(self.indexfile)
+            self.indexfile = None
+
+    def get_indexfile(self):
+        if self.indexfile is None:
+            (fd, self.indexfile) = tempfile.mkstemp(suffix='.index', prefix=self.sha1[:10])
+            os.close(fd)
+            cmd = ['git', 'read-tree', self.sha1]
+            env = os.environ.copy()
+            env['GIT_INDEX_FILE'] = self.indexfile
+            p = subprocess.Popen(cmd, env=env, stderr=subprocess.PIPE)
+            (out, err) = p.communicate()
+            retcode = p.wait()
+            if retcode or err:
+                sys.exit('Command failed: %s' % (' '.join(cmd),))
+
+        return self.indexfile
 
     def get_logmsg(self):
         cmd = ['git', 'cat-file', 'commit', self.sha1]
@@ -248,6 +317,24 @@ class GitCommit(AbstractGitCommit):
             sys.exit('Command failed: %s' % (' '.join(cmd),))
         # The log message follows the first blank line:
         return out[out.index('\n\n') + 2:]
+
+    def _get_attributes_pipe(self, attr_names):
+        if GIT_CHECK_ATTR_CACHED:
+            env = os.environ.copy()
+            env['GIT_INDEX_FILE'] = self.get_indexfile()
+            cmd = ['git', 'check-attr', '--cached', '-z', '--stdin'] + attr_names + ['--']
+            return subprocess.Popen(
+                cmd, env=env,
+                stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+                )
+        else:
+            # "git check-attr" doesn't know --cached option; return
+            # options from working copy instead:
+            cmd = ['git', 'check-attr', '-z', '--stdin'] + attr_names + ['--']
+            return subprocess.Popen(
+                cmd,
+                stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+                )
 
     def _get_diff_command(self):
         return [
