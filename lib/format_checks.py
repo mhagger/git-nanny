@@ -676,32 +676,8 @@ def if_then(condition, check):
     return ~condition | check
 
 
-class AttributeBasedCheck(FileCheck):
-    """Do the checks that are configured by git attributes."""
-
-    NAMED_CHECKS = [
-        ('check-trailing-ws', TrailingWhitespaceCheck()),
-        ('check-tab', TabCheck()),
-        ('check-cr', CRCheck()),
-        ('check-unterminated', UnterminatedLineCheck()),
-        ('check-atatat', MarkerStringCheck()),
-        ('check-conflict', MergeConflictCheck()),
-        ('check-conflict-noequals', MergeConflictCheck(allow_equals=True)),
-        ]
-
-    def get_needed_attribute_names(self):
-        return [
-            name
-            for (name, check) in self.NAMED_CHECKS
-            ]
-
-    def __call__(self, path, contents, attributes):
-        ok = True
-        for (name, check) in self.NAMED_CHECKS:
-            if attributes.get(name, False):
-                ok &= bool(check(path, contents, attributes))
-
-        return ok
+def attribute_then(property, file_check):
+    return if_then(AttributeSetCheck(property), file_check)
 
 
 checks = MultipleCheck(
@@ -709,7 +685,13 @@ checks = MultipleCheck(
         LogMarkerStringCheck(),
         ),
     FileCheckAdapter(
-        AttributeBasedCheck(),
+        attribute_then('check-trailing-ws', TrailingWhitespaceCheck()),
+        attribute_then('check-tab', TabCheck()),
+        attribute_then('check-cr', CRCheck()),
+        attribute_then('check-unterminated', UnterminatedLineCheck()),
+        attribute_then('check-atatat', MarkerStringCheck()),
+        attribute_then('check-conflict', MergeConflictCheck()),
+        attribute_then('check-conflict-noequals', MergeConflictCheck(allow_equals=True)),
         ),
     )
 
