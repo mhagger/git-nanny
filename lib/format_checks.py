@@ -684,7 +684,7 @@ def attribute_then(property, file_check):
     return if_then(AttributeSetCheck(property), file_check)
 
 
-checks = MultipleCheck(
+PRE_COMMIT_CHECKS = MultipleCheck(
     LogMessageCheckAdapter(
         LogMarkerStringCheck(),
         ),
@@ -700,7 +700,19 @@ checks = MultipleCheck(
     )
 
 
-def check_commit(commit):
-    return checks(commit)
+PRE_RECEIVE_CHECKS = MultipleCheck(
+    LogMessageCheckAdapter(
+        LogMarkerStringCheck(),
+        ),
+    FileCheckAdapter(
+        attribute_then('check-trailing-ws', TrailingWhitespaceCheck()),
+        attribute_then('check-tab', TabCheck()),
+        attribute_then('check-cr', CRCheck()),
+        attribute_then('check-unterminated', UnterminatedLineCheck()),
+        attribute_then('check-atatat', MarkerStringCheck()),
+        attribute_then('check-conflict', MergeConflictCheck()),
+        attribute_then('check-conflict-noequals', MergeConflictCheck(allow_equals=True)),
+        ),
+    )
 
 

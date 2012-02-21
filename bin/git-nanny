@@ -24,6 +24,8 @@ sys.path.insert(
     )
 
 import format_checks
+from format_checks import PRE_COMMIT_CHECKS
+from format_checks import PRE_RECEIVE_CHECKS
 
 
 ZEROS = '0' * 40
@@ -131,7 +133,7 @@ def check_format(args):
     else:
         parser.error('Require 0 or 1 argument')
 
-    if not format_checks.check_commit(commit):
+    if not PRE_RECEIVE_CHECKS(commit):
         sys.exit(1)
 
 
@@ -176,7 +178,7 @@ def pre_commit(args):
 
     commit = format_checks.GitIndex()
 
-    if not format_checks.check_commit(commit):
+    if not PRE_COMMIT_CHECKS(commit):
         raise Error(FAILURE_MESSAGE)
 
 
@@ -256,7 +258,7 @@ def pre_receive(args):
 
         commit = format_checks.GitCommit(sha1)
 
-        if not format_checks.check_commit(commit):
+        if not PRE_RECEIVE_CHECKS(commit):
             cmd = ['git', 'log', '-1', '--oneline', sha1]
             p = subprocess.Popen(cmd, stdout=subprocess.PIPE)
             description = p.stdout.read().strip()
