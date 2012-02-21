@@ -517,28 +517,6 @@ class TrailingWhitespaceCheck(TextCheck):
         return not self.trailing_ws_re.search(text)
 
 
-class LeadingWhitespaceCheck(TextCheck):
-    """Don't allow whitespace at the start of a line."""
-
-    trailing_ws_re = re.compile(r'^[ \t]', re.MULTILINE)
-
-    error_fmt = 'Leading whitespace in %(filename)s'
-
-    def check_text(self, text):
-        return not self.trailing_ws_re.search(text)
-
-
-class BlankLineCheck(TextCheck):
-    """Don't allow lines that are completely empty."""
-
-    blank_line_re = re.compile(r'^\n', re.MULTILINE)
-
-    error_fmt = 'Blank line in %(filename)s'
-
-    def check_text(self, text):
-        return not self.blank_line_re.search(text)
-
-
 class TabCheck(TextCheck):
     """Don't allow any tab characters."""
 
@@ -645,27 +623,6 @@ class AttributeValueCheck(AttributeCheck):
         return isinstance(value, str) and self.regexp.match(value)
 
 
-class MimeTypeCheck(FileCheck):
-    """A ChangeCheck that compares the file's mime type with a constant."""
-
-    def __init__(self, mime_type):
-        self.mime_type = mime_type
-
-    def __call__(self, change, silent=False):
-        mime_type = change.repository.get_mime_type(
-            change.commit, change.file.filename
-            )
-        ok = (mime_type == self.mime_type)
-
-        if not ok and not silent:
-            reporter.warning(
-                'Mime type of file %s should be %r'
-                % (change.file, self.mime_type,)
-                )
-
-        return ok
-
-
 def if_then(condition, check):
     """If condition is met, apply check.
 
@@ -715,10 +672,7 @@ class AttributeBasedCheck(FileCheck):
         return ok
 
 
-file_contents_checks = if_then(
-    ~AttributeSetCheck('ignore-checks'),
-    AttributeBasedCheck(),
-    )
+file_contents_checks = AttributeBasedCheck()
 
 
 def check_commit(commit):
