@@ -454,8 +454,7 @@ class MultipleCheck(_CompoundCheck):
     def __call__(self, *args, **kw):
         ok = True
         for check in self.checks:
-            if not check(*args, **kw):
-                ok = False
+            ok &= bool(check(*args, **kw))
 
         return ok
 
@@ -519,7 +518,7 @@ class FileCheckAdapter(CommitCheck):
 
         ok = True
         for (path, contents, attributes) in commit.iter_changes(attr_names=attr_names):
-            ok &= self.file_check(path, contents, attributes)
+            ok &= bool(self.file_check(path, contents, attributes))
 
         return ok
 
@@ -700,7 +699,7 @@ class AttributeBasedCheck(FileCheck):
         ok = True
         for (name, check) in self.NAMED_CHECKS:
             if attributes.get(name, False):
-                ok &= check(path, contents, attributes)
+                ok &= bool(check(path, contents, attributes))
 
         return ok
 
