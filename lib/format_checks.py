@@ -77,7 +77,8 @@ class Commit(object):
 class FileChange(object):
     """Represent a change to a particular file within a commit."""
 
-    def __init__(self, filename, contents, attributes):
+    def __init__(self, commit, filename, contents, attributes):
+        self.commit = commit
         self.filename = filename
         self.contents = contents
         self.attributes = attributes
@@ -207,7 +208,7 @@ class AbstractGitCommit(Commit):
                     contents = self._read_contents(filename)
                 except MissingContentsException:
                     contents = None
-                yield FileChange(filename, contents, attributes[filename])
+                yield FileChange(self, filename, contents, attributes[filename])
         else:
             changes = list(self._iter_changes_simple())
             filenames = [
@@ -216,7 +217,7 @@ class AbstractGitCommit(Commit):
                 ]
             attributes = self._get_attributes(filenames, attr_names)
             for (filename, contents) in changes:
-                yield FileChange(filename, contents, attributes[filename])
+                yield FileChange(self, filename, contents, attributes[filename])
 
 
 class GitIndex(AbstractGitCommit):
