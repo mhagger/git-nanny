@@ -690,31 +690,27 @@ log_message_checks = MultipleCheck(
 class AttributeBasedCheck(FileCheck):
     """Do the checks that are configured by git attributes."""
 
-    named_checks = {
-        'check-ws' : None,
-        'check-trailing-ws' : TrailingWhitespaceCheck(),
-        'check-tab' : TabCheck(),
-        'check-cr' : CRCheck(),
-        'check-unterminated' : UnterminatedLineCheck(),
-        'check-atatat' : MarkerStringCheck(),
-        'check-conflict' : MergeConflictCheck(),
-        'check-conflict-noequals' : MergeConflictCheck(allow_equals=True),
-        }
+    NAMED_CHECKS = [
+        ('check-trailing-ws', TrailingWhitespaceCheck()),
+        ('check-tab', TabCheck()),
+        ('check-cr', CRCheck()),
+        ('check-unterminated', UnterminatedLineCheck()),
+        ('check-atatat', MarkerStringCheck()),
+        ('check-conflict', MergeConflictCheck()),
+        ('check-conflict-noequals', MergeConflictCheck(allow_equals=True)),
+        ]
 
     def get_needed_attribute_names(self):
-        return self.named_checks.iterkeys()
+        return [
+            name
+            for (name, check) in self.NAMED_CHECKS
+            ]
 
     def __call__(self, path, contents, attributes):
         ok = True
-        for (name, value) in attributes.iteritems():
-            if name.startswith('check-') and value:
-                try:
-                    check = self.named_checks[name]
-                except KeyError:
-                    sys.stderr.write('Warning: check %r is unknown!\n' % (name,))
-                else:
-                    if check is not None:
-                        ok &= check(path, contents, attributes)
+        for (name, check) in self.NAMED_CHECKS:
+            if attributes.get(name, False):
+                ok &= check(path, contents, attributes)
 
         return ok
 
