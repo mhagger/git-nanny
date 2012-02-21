@@ -460,6 +460,13 @@ class MultipleCheck(_CompoundCheck):
         return ok
 
 
+class CommitCheck(Check):
+    """An arbitrary check on an AbstractGitCommit object."""
+
+    def __call__(self, commit, silent=False):
+        raise NotImplementedError()
+
+
 class LogMessageCheck(Check):
     """A check that a log message is OK."""
 
@@ -467,6 +474,21 @@ class LogMessageCheck(Check):
         """Return True iff commit passes test."""
 
         raise NotImplementedError()
+
+
+class LogMessageCheckAdapter(CommitCheck):
+    """A CommitCheck that is a MultipleCheck over LogMessageChecks."""
+
+    def __init__(self, *log_message_checks):
+        self.log_message_check = MultipleCheck(*log_message_checks)
+
+    def __call__(self, commit, silent=False):
+        try:
+            logmsg = commit.get_logmsg()
+        except NotImplementedError:
+            return True
+        else:
+            return log_message_check(logmsg, silent=silent)
 
 
 class LogMarkerStringCheck(LogMessageCheck):
@@ -639,11 +661,6 @@ def if_then(condition, check):
     return ~condition | check
 
 
-log_message_checks = MultipleCheck(
-    LogMarkerStringCheck(),
-    )
-
-
 class AttributeBasedCheck(FileCheck):
     """Do the checks that are configured by git attributes."""
 
@@ -675,15 +692,15 @@ class AttributeBasedCheck(FileCheck):
 file_contents_checks = AttributeBasedCheck()
 
 
-def check_commit(commit):
-    ok = True
+checks = MultipleCheck(
+    LogMessageCheckAdapter(
+        LogMarkerStringCheck(),
+        ),
+    )
 
-    try:
-        logmsg = commit.get_logmsg()
-    except NotImplementedError:
-        pass
-    else:
-        ok &= log_message_checks(logmsg)
+
+def check_commit(commit):
+    ok = checks(commit)
 
     attr_names = list(file_contents_checks.get_needed_attribute_names())
     for (path, contents, attributes) in commit.iter_changes(attr_names=attr_names):
