@@ -488,7 +488,7 @@ class LogMessageCheckAdapter(CommitCheck):
         except NotImplementedError:
             return True
         else:
-            return log_message_check(logmsg, silent=silent)
+            return self.log_message_check(logmsg, silent=silent)
 
 
 class LogMarkerStringCheck(LogMessageCheck):
@@ -506,6 +506,22 @@ class FileCheck(Check):
 
     def __call__(self, path, contents, attributes):
         raise NotImplementedError()
+
+
+class FileCheckAdapter(CommitCheck):
+    """A CommitCheck that is a MultipleCheck over FileChecks."""
+
+    def __init__(self, *file_checks):
+        self.file_check = MultipleCheck(*file_checks)
+
+    def __call__(self, commit, silent=False):
+        attr_names = list(self.file_check.get_needed_attribute_names())
+
+        ok = True
+        for (path, contents, attributes) in commit.iter_changes(attr_names=attr_names):
+            ok &= self.file_check(path, contents, attributes)
+
+        return ok
 
 
 class TextCheck(FileCheck):
@@ -689,23 +705,17 @@ class AttributeBasedCheck(FileCheck):
         return ok
 
 
-file_contents_checks = AttributeBasedCheck()
-
-
 checks = MultipleCheck(
     LogMessageCheckAdapter(
         LogMarkerStringCheck(),
+        ),
+    FileCheckAdapter(
+        AttributeBasedCheck(),
         ),
     )
 
 
 def check_commit(commit):
-    ok = checks(commit)
-
-    attr_names = list(file_contents_checks.get_needed_attribute_names())
-    for (path, contents, attributes) in commit.iter_changes(attr_names=attr_names):
-        ok &= file_contents_checks(path, contents, attributes)
-
-    return ok
+    return checks(commit)
 
 
