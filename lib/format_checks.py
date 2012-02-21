@@ -63,15 +63,24 @@ class Commit(object):
         raise NotImplementedError()
 
     def iter_changes(self, attr_names):
-        """Iterate over the changes in this Commit.
+        """Iterate over the FileChanges in this Commit.
 
-        Iterate over (filename, contents, attributes) for each file
-        that was changed in this commit, relative to its first parent.
+        Iterate over a FileChange object for each file that was
+        changed in this commit, relative to its first parent.
         Contents are the new file contents, as a string, or None if
         the file was deleted.  attr_names is an iterable over the
         names of attributes that should be checked."""
 
         raise NotImplementedError()
+
+
+class FileChange(object):
+    """Represent a change to a particular file within a commit."""
+
+    def __init__(self, filename, contents, attributes):
+        self.filename = filename
+        self.contents = contents
+        self.attributes = attributes
 
 
 class AbstractGitCommit(Commit):
@@ -198,7 +207,7 @@ class AbstractGitCommit(Commit):
                     contents = self._read_contents(filename)
                 except MissingContentsException:
                     contents = None
-                yield (filename, contents, attributes[filename])
+                yield FileChange(filename, contents, attributes[filename])
         else:
             changes = list(self._iter_changes_simple())
             filenames = [
@@ -207,7 +216,7 @@ class AbstractGitCommit(Commit):
                 ]
             attributes = self._get_attributes(filenames, attr_names)
             for (filename, contents) in changes:
-                yield (filename, contents, attributes[filename])
+                yield FileChange(filename, contents, attributes[filename])
 
 
 class GitIndex(AbstractGitCommit):
@@ -521,8 +530,11 @@ class FileCheckAdapter(CommitCheck):
         attr_names = list(self.file_check.get_needed_attribute_names())
 
         ok = True
-        for (path, contents, attributes) in commit.iter_changes(attr_names=attr_names):
-            ok &= bool(self.file_check(path, contents, attributes))
+        for file_change in commit.iter_changes(attr_names=attr_names):
+            filename = file_change.filename
+            contents = file_change.contents
+            attributes = file_change.attributes
+            ok &= bool(self.file_check(filename, contents, attributes))
 
         return ok
 
