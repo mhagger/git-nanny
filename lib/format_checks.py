@@ -516,7 +516,7 @@ class LogMarkerStringCheck(LogMessageCheck):
 class FileCheck(Check):
     """A Check applied to a single file."""
 
-    def __call__(self, path, contents, attributes):
+    def __call__(self, file_change):
         raise NotImplementedError()
 
 
@@ -531,10 +531,7 @@ class FileCheckAdapter(CommitCheck):
 
         ok = True
         for file_change in commit.iter_changes(attr_names=attr_names):
-            filename = file_change.filename
-            contents = file_change.contents
-            attributes = file_change.attributes
-            ok &= bool(self.file_check(filename, contents, attributes))
+            ok &= bool(self.file_check(file_change))
 
         return ok
 
@@ -542,11 +539,11 @@ class FileCheckAdapter(CommitCheck):
 class TextCheck(FileCheck):
     """A Check that is purely based on the text of the file."""
 
-    def __call__(self, path, contents, attributes):
-        ok = contents is None or self.check_text(contents)
+    def __call__(self, file_change):
+        ok = file_change.contents is None or self.check_text(file_change.contents)
 
         if not ok:
-            reporter.warning(self.error_fmt % {'filename' : path})
+            reporter.warning(self.error_fmt % {'filename' : file_change.filename})
 
         return ok
 
@@ -641,8 +638,8 @@ class FilenameCheck(FileCheck):
     def __init__(self, regexp):
         self.regexp = re.compile(regexp)
 
-    def __call__(self, path, contents, attributes):
-        return bool(self.regexp.match(path))
+    def __call__(self, file_change):
+        return bool(self.regexp.match(file_change.filename))
 
 
 class AttributeCheck(FileCheck):
@@ -656,8 +653,8 @@ class AttributeCheck(FileCheck):
 
 
 class AttributeSetCheck(AttributeCheck):
-    def __call__(self, path, contents, attributes):
-        return attributes.get(self.property, None)
+    def __call__(self, file_change):
+        return file_change.attributes.get(self.property, None)
 
 
 class AttributeValueCheck(AttributeCheck):
@@ -671,8 +668,8 @@ class AttributeValueCheck(AttributeCheck):
         AttributeCheck.__init__(self, property)
         self.regexp = re.compile('^' + pattern + '$')
 
-    def __call__(self, path, contents, attributes):
-        value = attributes.get(self.property, None)
+    def __call__(self, file_change):
+        value = file_change.attributes.get(self.property, None)
         return isinstance(value, str) and self.regexp.match(value)
 
 
