@@ -5,6 +5,7 @@
 usage = """\
 usage: %prog check-format [OPTIONS]
        %prog pre-commit [OPTIONS]
+       %prog pre-receive [OPTIONS] # For server-side use
 
 Type '%prog CMD --help' for more information.
 """
@@ -23,6 +24,9 @@ sys.path.insert(
     )
 
 import format_checks
+
+
+ZEROS = '0' * 40
 
 
 class Error(Exception):
@@ -137,6 +141,16 @@ Your commit has been rejected because of the problems listed above.
 Please fix the errors and try again.
 """
 
+FAILURE_MESSAGE2 = """\
+
+The following commit has been rejected because of the problems listed
+above:
+
+    %s
+
+Please fix the errors and try again.
+"""
+
 def pre_commit(args):
     parser = optparse.OptionParser(
         prog='git nanny pre-commit',
@@ -166,9 +180,107 @@ def pre_commit(args):
         raise Error(FAILURE_MESSAGE)
 
 
+def pre_receive(args):
+    parser = optparse.OptionParser(
+        prog='git nanny pre-receive',
+        description='Run (server-side) pre-receive checks.',
+        usage='%prog [OPTIONS]',
+        )
+
+    parser.add_option(
+        '--verbose', '-v', action='store_true', default=False,
+        help='Increase amount of informational output.',
+        )
+
+    parser.add_option(
+        '--debug', '-d', action='store_true', default=False,
+        help='Print a lot of informational output.',
+        )
+
+    (options, args) = parser.parse_args(args)
+    process_common_options(options)
+
+    if args:
+        parser.error('Unexpected arguments: %s' % (' '.join(args),))
+
+    updates = []
+    for line in sys.stdin:
+        (oldrev, newrev, refname) = line.strip().split(' ', 2)
+        if oldrev == ZEROS:
+            oldrev = None
+        if newrev == ZEROS:
+            newrev = None
+        updates.append((oldrev, newrev, refname))
+
+    # Determine all of the commits that were added by the updates:
+    cmd = ['git', 'log', '--format=%H %P']
+    cmd += [
+        ('%s' % newrev)
+        for (oldrev, newrev, refname) in updates
+        if newrev is not None
+        ]
+    cmd += ['--not', '--all']
+    p = subprocess.Popen(
+        cmd, stdout=subprocess.PIPE,
+        )
+
+    # A map {sha1 : (set(parents), set(children))}
+    new_commits = {}
+    for line in p.stdout:
+        words = line.strip().split()
+        new_commits[words[0]] = (set(words[1:]), set())
+
+    retcode = p.wait()
+    if retcode:
+        sys.exit('Error running command: %s' % (' '.join(cmd),))
+
+    # Tell the parents about their children and look for commits that
+    # have no parents among the new commits:
+    orphans = []
+    for (sha1, (parents, children)) in new_commits.iteritems():
+        for parent in list(parents):
+            try:
+                (grandparents, siblings) = new_commits[parent]
+            except KeyError:
+                # The parent must have been an old commit.
+                parents.remove(parent)
+            else:
+                siblings.add(sha1)
+        if not parents:
+            # This commit's parents (if any) are all old commits:
+            orphans.append(sha1)
+
+    while orphans:
+        sha1 = orphans.pop()
+        (parents, children) = new_commits.pop(sha1)
+
+        commit = format_checks.GitCommit(sha1)
+
+        if not format_checks.check_commit(commit):
+            cmd = ['git', 'log', '-1', '--oneline', sha1]
+            p = subprocess.Popen(cmd, stdout=subprocess.PIPE)
+            description = p.stdout.read().strip()
+            retcode = p.wait()
+            if retcode:
+                sys.exit('Error running command: %s' % (' '.join(cmd),))
+            raise Error(FAILURE_MESSAGE2 % (description,))
+
+        for parent in parents:
+            (grandparents, siblings) = new_commits[parent]
+            siblings.remove(sha1)
+        for child in children:
+            (siblings, grandchildren) = new_commits[child]
+            siblings.remove(sha1)
+            if not siblings:
+                orphans.append(child)
+
+    assert not new_commits
+
+
 subcommands = {
     'check-format' : check_format,
     'pre-commit' : pre_commit,
+    'pre-receive' : pre_receive,
     }
 
 
