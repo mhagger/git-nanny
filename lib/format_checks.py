@@ -115,7 +115,7 @@ class AbstractGitCommit(Commit):
         else:
             return committish
 
-    def _read_contents(self, filename):
+    def read_contents(self, filename):
         """Read the contents of filename in this commit.
 
         Return contents as a string.  If the file does not exist,
@@ -157,13 +157,13 @@ class AbstractGitCommit(Commit):
             status = status_score[0]
             src_path = i.next()
             if status in ['A', 'M']:
-                contents = self._read_contents(src_path)
+                contents = self.read_contents(src_path)
                 yield (src_path, contents)
             elif status in ['D']:
                 yield (src_path, None)
             elif status == 'T':
                 if dst_mode & 0100000 == 0:
-                    contents = self._read_contents(src_path)
+                    contents = self.read_contents(src_path)
                     yield (src_path, contents)
                 else:
                     yield (src_path, None)
@@ -210,7 +210,7 @@ class AbstractGitCommit(Commit):
             attributes = self._get_attributes(self.filenames, attr_names)
             for filename in self.filenames:
                 try:
-                    contents = self._read_contents(filename)
+                    contents = self.read_contents(filename)
                 except MissingContentsException:
                     contents = None
                 yield FileChange(self, filename, contents, attributes[filename])
@@ -252,7 +252,7 @@ class GitIndex(AbstractGitCommit):
             self._get_base('HEAD'),
             ]
 
-    def _read_contents(self, filename):
+    def read_contents(self, filename):
         cmd = ['git', 'cat-file', 'blob', ':%s' % (filename)]
         p = subprocess.Popen(
             cmd,
@@ -284,7 +284,7 @@ class GitWorkingTree(AbstractGitCommit):
             self._get_base('HEAD'),
             ]
 
-    def _read_contents(self, filename):
+    def read_contents(self, filename):
         try:
             f = open(filename, 'rb')
         except IOError:
@@ -362,7 +362,7 @@ class GitCommit(AbstractGitCommit):
             self._get_base('%s^' % (self.sha1,)), self.sha1,
             ]
 
-    def _read_contents(self, filename):
+    def read_contents(self, filename):
         cmd = ['git', 'cat-file', 'blob', '%s:%s' % (self.sha1, filename)]
         p = subprocess.Popen(
             cmd,
