@@ -80,8 +80,13 @@ class FileChange(object):
     def __init__(self, commit, filename, contents, attributes):
         self.commit = commit
         self.filename = filename
-        self.contents = contents
+        self._contents = contents
         self.attributes = attributes
+
+    def get_contents(self):
+        return self._contents
+
+    contents = property(get_contents)
 
 
 class AbstractGitCommit(Commit):
