@@ -4,7 +4,9 @@
 
 usage = """\
 usage: %prog check-format [OPTIONS]
-       %prog pre-commit [OPTIONS]
+       %prog pre-commit [OPTIONS] # For use as hook
+       %prog prepare-commit-msg [OPTIONS] # For use as hook
+       %prog commit-msg [OPTIONS] # For use as hook
        %prog pre-receive [OPTIONS] # For server-side use
 
 Type '%prog CMD --help' for more information.
@@ -24,6 +26,8 @@ sys.path.insert(
     )
 
 import format_checks
+from format_checks import ATATAT_CHECK
+from format_checks import MARKER_STRING
 from format_checks import PRE_COMMIT_CHECKS
 from format_checks import PRE_RECEIVE_CHECKS
 
@@ -137,21 +141,12 @@ def check_format(args):
         sys.exit(1)
 
 
-FAILURE_MESSAGE = """\
+PRE_COMMIT_FAILURE_MESSAGE = """\
 
 Your commit has been rejected because of the problems listed above.
 Please fix the errors and try again.
 """
 
-FAILURE_MESSAGE2 = """\
-
-The following commit has been rejected because of the problems listed
-above:
-
-    %s
-
-Please fix the errors and try again.
-"""
 
 def pre_commit(args):
     parser = optparse.OptionParser(
@@ -179,7 +174,149 @@ def pre_commit(args):
     commit = format_checks.GitIndex()
 
     if not PRE_COMMIT_CHECKS(commit):
-        raise Error(FAILURE_MESSAGE)
+        raise Error(PRE_COMMIT_FAILURE_MESSAGE)
+
+
+def strip_comments(msg):
+    return ''.join(
+        line
+        for line in msg.splitlines(True)
+        if not line.startswith('#')
+        )
+
+
+ATATAT_WARNING = """\
+# Files in this commit contain the marker string ('%(MARKER_STRING)s')!
+# If you leave the marker string in this commit message (as on the top
+# line above), the commit will be accepted as a local commit, but it
+# should not be pushed to the central repository.
+
+""" % dict(MARKER_STRING=MARKER_STRING)
+
+
+PREPARE_COMMIT_MSG_FAILURE_MESSAGE = """\
+
+Your commit has been rejected because one or more files contain '%(MARKER_STRING)s'.
+If you would like to commit anyway, then you must mark the commit as
+'local' by including '%(MARKER_STRING)s' in your commit message.  (But remember,
+such commits cannot be pushed to the central git repository.)
+""" % dict(MARKER_STRING=MARKER_STRING)
+
+
+def prepare_commit_msg(args):
+    parser = optparse.OptionParser(
+        prog='git nanny prepare-commit-msg',
+        description='Tweak commit message if any files contain %s.' % (MARKER_STRING,),
+        usage='%prog [OPTIONS]',
+        )
+
+    parser.add_option(
+        '--verbose', '-v', action='store_true', default=False,
+        help='Increase amount of informational output.',
+        )
+
+    parser.add_option(
+        '--debug', '-d', action='store_true', default=False,
+        help='Print a lot of informational output.',
+        )
+
+    (options, args) = parser.parse_args(args)
+    process_common_options(options)
+
+    if not args:
+        parser.error('Expected filename argument')
+
+    msg_filename = args.pop(0)
+
+    commit = format_checks.GitIndex()
+
+    # See if the draft commit message already contains the marker
+    # string (this is a cheap test):
+    msg = open(msg_filename).read()
+    if MARKER_STRING in strip_comments(msg):
+        return
+
+    # See if any files contain MARKER_STRING:
+    if ATATAT_CHECK(commit):
+        return
+
+    if os.environ.get('GIT_EDITOR') == ':':
+        # The editor will not be opened, so the user doesn't have a
+        # chance to add the marker string to the commit message:
+        raise Error(PREPARE_COMMIT_MSG_FAILURE_MESSAGE)
+
+    # Add a warning to the proposed commit message:
+    f = open(msg_filename, 'w')
+    f.write('%s ' % (MARKER_STRING,))
+    wrote_warning = False
+    for line in msg.splitlines(True):
+        if not wrote_warning and line.startswith('#'):
+            f.write(ATATAT_WARNING)
+            wrote_warning = True
+        f.write(line)
+    f.close()
+
+
+COMMIT_MSG_FAILURE_MESSAGE = """\
+
+Your commit has been rejected because one or more files contain '%(MARKER_STRING)s'.
+If you would like to commit anyway, then you must mark the commit as
+'local' by including '%(MARKER_STRING)s' in your commit message.  (But remember,
+such commits cannot be pushed to the central git repository.)
+""" % dict(MARKER_STRING=MARKER_STRING)
+
+
+def commit_msg(args):
+    parser = optparse.OptionParser(
+        prog='git nanny commit-msg',
+        description=(
+            'Hook script to check commit message if any files contain %s.'
+            % (MARKER_STRING,)
+            ),
+        usage='%prog [OPTIONS]',
+        )
+
+    parser.add_option(
+        '--verbose', '-v', action='store_true', default=False,
+        help='Increase amount of informational output.',
+        )
+
+    parser.add_option(
+        '--debug', '-d', action='store_true', default=False,
+        help='Print a lot of informational output.',
+        )
+
+    (options, args) = parser.parse_args(args)
+    process_common_options(options)
+
+    if not args:
+        parser.error('Expected filename argument')
+
+    msg_filename = args.pop(0)
+    commit = format_checks.GitIndex()
+
+    # See if the draft commit message contains the marker string (this
+    # is a cheap test):
+    msg = open(msg_filename).read()
+    if MARKER_STRING in strip_comments(msg):
+        return
+
+    # See if any files contain MARKER_STRING:
+    if ATATAT_CHECK(commit):
+        return
+
+    raise Error(COMMIT_MSG_FAILURE_MESSAGE)
+
+
+PRE_RECEIVE_FAILURE_MESSAGE = """\
+
+The following commit has been rejected because of the problems listed
+above:
+
+    %s
+
+Please fix the errors and try again.
+"""
 
 
 def pre_receive(args):
@@ -265,7 +402,7 @@ def pre_receive(args):
             retcode = p.wait()
             if retcode:
                 sys.exit('Error running command: %s' % (' '.join(cmd),))
-            raise Error(FAILURE_MESSAGE2 % (description,))
+            raise Error(PRE_RECEIVE_FAILURE_MESSAGE % (description,))
 
         for parent in parents:
             (grandparents, siblings) = new_commits[parent]
@@ -282,6 +419,8 @@ def pre_receive(args):
 subcommands = {
     'check-format' : check_format,
     'pre-commit' : pre_commit,
+    'prepare-commit-msg' : prepare_commit_msg,
+    'commit-msg' : commit_msg,
     'pre-receive' : pre_receive,
     }
 

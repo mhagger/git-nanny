@@ -17,7 +17,27 @@ git init --bare test-repo.git
 chmod +x test-repo.git/hooks/pre-receive
 
 git clone test-repo.git
+
 cd test-repo
+
+(
+    echo '#! /bin/sh'
+    echo "$DIR/bin/git-nanny pre-commit"
+) >.git/hooks/pre-commit
+chmod +x .git/hooks/pre-commit
+
+(
+    echo '#! /bin/sh'
+    echo "$DIR/bin/git-nanny prepare-commit-msg" '"$@"'
+) >.git/hooks/prepare-commit-msg
+chmod +x .git/hooks/prepare-commit-msg
+
+(
+    echo '#! /bin/sh'
+    echo "$DIR/bin/git-nanny commit-msg" '"$@"'
+) >.git/hooks/commit-msg
+chmod +x .git/hooks/commit-msg
+
 git config user.name "Lou User"
 git config user.email "luser@example.com"
 
