@@ -74,6 +74,10 @@ do
     fi
 done
 
+git rm a.txt
+git commit -am "delete"
+
+
 echo "Pushing master..."
 git push origin master
 

@@ -8,6 +8,9 @@ import itertools
 import tempfile
 
 
+ZEROS = '0' * 40
+
+
 def get_git_version():
     VERSION_RE = re.compile(r'(?P<version>\d+(?:\.\d+)+)')
     cmd = ['git', '--version']
@@ -74,19 +77,39 @@ class Commit(object):
         raise NotImplementedError()
 
 
-class FileChange(object):
-    """Represent a change to a particular file within a commit."""
+class FileVersion(object):
+    """A particular version of a particular (existing) file.
 
-    def __init__(self, commit, filename, contents, attributes):
+    sha1 can be None if we are talking about the version of a file in
+    the working copy."""
+
+    def __init__(self, commit, filename, contents=None, attributes=None):
         self.commit = commit
         self.filename = filename
-        self._contents = contents
-        self.attributes = attributes
 
-    def get_contents(self):
+        self._contents = contents
+        self._attributes = attributes
+
+    @property
+    def contents(self):
+        if self._contents is None:
+            self._contents = self.commit.read_contents(self.filename)
         return self._contents
 
-    contents = property(get_contents)
+    @property
+    def attributes(self):
+        return self._attributes
+
+
+class FileChange(object):
+    """A change to a particular file within a commit.
+
+    oldfile or newfile can be None if the file was added or deleted in
+    the commit."""
+
+    def __init__(self, oldfile, newfile):
+        self.oldfile = oldfile
+        self.newfile = newfile
 
 
 class AbstractGitCommit(Commit):
@@ -149,26 +172,33 @@ class AbstractGitCommit(Commit):
                 prefix = i.next()
             except StopIteration:
                 break
-            prefix = prefix[1:]
+            filename = i.next()
 
-            [src_mode, dst_mode, src_sha1, dst_sha1, status_score] = prefix.split(' ')
+            [src_mode, dst_mode, src_sha1, dst_sha1, status_score] = prefix[1:].split(' ')
             src_mode = int(src_mode, 8)
             dst_mode = int(dst_mode, 8)
+            if src_sha1 == ZEROS:
+                src_sha1 = None
+            if dst_sha1 == ZEROS:
+                dst_sha1 = None
             status = status_score[0]
-            src_path = i.next()
-            if status in ['A', 'M']:
-                contents = self.read_contents(src_path)
-                yield (src_path, contents)
-            elif status in ['D']:
-                yield (src_path, None)
-            elif status == 'T':
-                if dst_mode & 0100000 == 0:
-                    contents = self.read_contents(src_path)
-                    yield (src_path, contents)
-                else:
-                    yield (src_path, None)
+
+            if status == 'U':
+                sys.exit('Error: unmerged file(s)')
+            if status not in ['A', 'M', 'D', 'T']:
+                sys.exit('Unexpected status %s for file %s' % (status, filename,))
+
+            if status in ['M', 'D', 'T'] and (src_mode & 0170000) == 0100000:
+                oldfile = FileVersion(self, filename)
             else:
-                sys.exit('Unexpected status %s for file %s' % (status, src_path,))
+                oldfile = None
+
+            if status in ['A', 'M', 'T'] and (dst_mode & 0170000) == 0100000:
+                newfile = FileVersion(self, filename, contents=self.read_contents(filename))
+            else:
+                newfile = None
+
+            yield FileChange(oldfile, newfile)
 
     attribute_re = re.compile(r'^(?P<filename>.*): (?P<name>\S+): (?P<value>.*)$')
 
@@ -206,23 +236,24 @@ class AbstractGitCommit(Commit):
         return attributes
 
     def iter_changes(self, attr_names):
-        if self.filenames is not None:
-            attributes = self._get_attributes(self.filenames, attr_names)
-            for filename in self.filenames:
-                try:
-                    contents = self.read_contents(filename)
-                except MissingContentsException:
-                    contents = None
-                yield FileChange(self, filename, contents, attributes[filename])
-        else:
+        if self.filenames is None:
             changes = list(self._iter_changes_simple())
-            filenames = [
-                filename
-                for (filename, contents) in changes
+            self.filenames = [
+                change.newfile.filename
+                for change in changes
+                if change.newfile is not None
                 ]
-            attributes = self._get_attributes(filenames, attr_names)
-            for (filename, contents) in changes:
-                yield FileChange(self, filename, contents, attributes[filename])
+        else:
+            changes = [
+                FileChange(self, None, FileVersion(self, filename))
+                for filename in self.filenames
+                ]
+
+        attributes = self._get_attributes(self.filenames, attr_names)
+        for change in changes:
+            if change.newfile is not None:
+                change.newfile._attributes = attributes[change.newfile.filename]
+            yield change
 
 
 class GitIndex(AbstractGitCommit):
@@ -546,10 +577,10 @@ class TextCheck(FileCheck):
     """A Check that is purely based on the text of the file."""
 
     def __call__(self, file_change):
-        ok = file_change.contents is None or self.check_text(file_change.contents)
+        ok = file_change.newfile is None or self.check_text(file_change.newfile.contents)
 
         if not ok:
-            reporter.warning(self.error_fmt % {'filename' : file_change.filename})
+            reporter.warning(self.error_fmt % {'filename' : file_change.newfile.filename})
 
         return ok
 
@@ -645,7 +676,10 @@ class FilenameCheck(FileCheck):
         self.regexp = re.compile(regexp)
 
     def __call__(self, file_change):
-        return bool(self.regexp.match(file_change.filename))
+        return bool(
+            file_change.newfile is None
+            or self.regexp.match(file_change.newfile.filename)
+            )
 
 
 class AttributeCheck(FileCheck):
@@ -660,7 +694,10 @@ class AttributeCheck(FileCheck):
 
 class AttributeSetCheck(AttributeCheck):
     def __call__(self, file_change):
-        return file_change.attributes.get(self.property, None)
+        return (
+            file_change.newfile is not None
+            and file_change.newfile.attributes.get(self.property, None)
+            )
 
 
 class AttributeValueCheck(AttributeCheck):
@@ -675,8 +712,10 @@ class AttributeValueCheck(AttributeCheck):
         self.regexp = re.compile('^' + pattern + '$')
 
     def __call__(self, file_change):
-        value = file_change.attributes.get(self.property, None)
-        return isinstance(value, str) and self.regexp.match(value)
+        if file_change.newfile is None:
+            return True
+        value = file_change.newfile.attributes.get(self.property, None)
+        return isinstance(value, str) and bool(self.regexp.match(value))
 
 
 def if_then(condition, check):

@@ -432,7 +432,7 @@ def main(args):
         if subcommand is not None:
             try:
                 subcommand(args)
-            except Exception, e:
+            except Error, e:
                 sys.exit(str(e))
             sys.exit(0)
         elif arg in ['help', '--help', '-h']:
