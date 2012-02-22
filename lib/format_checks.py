@@ -83,22 +83,53 @@ class FileVersion(object):
     sha1 can be None if we are talking about the version of a file in
     the working copy."""
 
-    def __init__(self, commit, filename, contents=None, attributes=None):
-        self.commit = commit
+    def __init__(self, filename, attributes=None):
         self.filename = filename
-
-        self._contents = contents
         self._attributes = attributes
+
+    @property
+    def attributes(self):
+        return self._attributes
+
+
+class ObjectFileVersion(FileVersion):
+    """A FileVersion that can be found in a blob in the object database."""
+
+    def __init__(self, filename, sha1, attributes=None):
+        FileVersion.__init__(self, filename, attributes=attributes)
+        self.sha1 = sha1
+        self._contents = None
+
+    @property
+    def contents(self):
+        if self._contents is None:
+            cmd = ['git', 'cat-file', 'blob', self.sha1]
+            p = subprocess.Popen(
+                cmd,
+                stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+                )
+            (out, err) = p.communicate()
+            retcode = p.wait()
+            if retcode or err:
+                raise MissingContentsException('Command failed: %s' % (' '.join(cmd),))
+            self._contents = out
+
+        return self._contents
+
+
+class CommitFileVersion(FileVersion):
+    """A version of a file from a Commit object."""
+
+    def __init__(self, commit, filename, attributes=None):
+        FileVersion.__init__(self, filename, attributes=attributes)
+        self.commit = commit
+        self._contents = None
 
     @property
     def contents(self):
         if self._contents is None:
             self._contents = self.commit.read_contents(self.filename)
         return self._contents
-
-    @property
-    def attributes(self):
-        return self._attributes
 
 
 class FileChange(object):
@@ -189,12 +220,15 @@ class AbstractGitCommit(Commit):
                 sys.exit('Unexpected status %s for file %s' % (status, filename,))
 
             if status in ['M', 'D', 'T'] and (src_mode & 0170000) == 0100000:
-                oldfile = FileVersion(self, filename)
+                oldfile = ObjectFileVersion(filename, src_sha1)
             else:
                 oldfile = None
 
             if status in ['A', 'M', 'T'] and (dst_mode & 0170000) == 0100000:
-                newfile = FileVersion(self, filename)
+                if dst_sha1 is not None:
+                    newfile = ObjectFileVersion(filename, dst_sha1)
+                else:
+                    newfile = FileVersion(self, filename)
             else:
                 newfile = None
 
