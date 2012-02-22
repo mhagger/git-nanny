@@ -294,7 +294,7 @@ class GitCommit(AbstractGitCommit):
         AbstractGitCommit.__init__(self, filenames)
         self.sha1 = sha1
         self.indexfile = None
-        self.logmsg = None
+        self._logmsg = None
 
     def __del__(self):
         if self.indexfile:
@@ -317,7 +317,7 @@ class GitCommit(AbstractGitCommit):
         return self.indexfile
 
     def get_logmsg(self):
-        if self.logmsg is None:
+        if self._logmsg is None:
             cmd = ['git', 'cat-file', 'commit', self.sha1]
             p = subprocess.Popen(
                 cmd,
@@ -328,9 +328,9 @@ class GitCommit(AbstractGitCommit):
             if retcode or err:
                 sys.exit('Command failed: %s' % (' '.join(cmd),))
             # The log message follows the first blank line:
-            self.logmsg = out[out.index('\n\n') + 2:]
+            self._logmsg = out[out.index('\n\n') + 2:]
 
-        return self.logmsg
+        return self._logmsg
 
     def _get_attributes_pipe(self, attr_names):
         if GIT_CHECK_ATTR_CACHED:
