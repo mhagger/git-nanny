@@ -261,7 +261,7 @@ class AbstractGitCommit(Commit):
                 if dst_sha1 is not None:
                     newfile = ObjectFileVersion(filename, dst_sha1)
                 else:
-                    newfile = FileVersion(self, filename)
+                    newfile = CommitFileVersion(self, filename)
             else:
                 newfile = None
 
@@ -312,7 +312,7 @@ class AbstractGitCommit(Commit):
                 ]
         else:
             changes = [
-                FileChange(self, None, FileVersion(self, filename))
+                FileChange(None, CommitFileVersion(self, filename))
                 for filename in self.filenames
                 ]
 
