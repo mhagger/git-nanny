@@ -60,18 +60,32 @@ do
 done
 
 git co -b BRANCH2 master
-for i in $(seq 6 10)
+for i in $(seq 6 15)
 do
-    if test "$i" = "8"
-    then
-	echo '*.txt -check-trailing-ws check-atatat' >.gitattributes
-	echo "2.$i $MARKER_STRING " >a.txt
-	git commit -am "2.$i $MARKER_STRING" -e
-    else
-	echo '*.txt check-trailing-ws check-atatat' >.gitattributes
-	echo "2.$i" >a.txt
-	git commit -am "2.$i"
-    fi
+    case "$i" in
+        "7")
+            echo '*.txt -check-trailing-ws check-atatat' >.gitattributes
+            echo "2.$i $MARKER_STRING " >a.txt
+            git commit -am "2.$i $MARKER_STRING"
+            ;;
+        "8")
+            echo "2.$i" >>a.txt
+            git commit -am "2.$i"
+            ;;
+        "9")
+            echo "2.$i $MARKER_STRING" >>a.txt
+            git commit -am "2.$i" -e
+            ;;
+        "10")
+            echo "2.$i $MARKER_STRING" >>a.txt
+            git commit -am "2.$i"
+            ;;
+        *)
+            echo '*.txt check-trailing-ws check-atatat' >.gitattributes
+            echo "2.$i" >a.txt
+            git commit -am "2.$i"
+            ;;
+    esac
 done
 
 git rm a.txt

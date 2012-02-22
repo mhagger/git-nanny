@@ -6,6 +6,7 @@ import re
 import subprocess
 import itertools
 import tempfile
+import difflib
 
 
 ZEROS = '0' * 40
@@ -141,6 +142,38 @@ class FileChange(object):
     def __init__(self, oldfile, newfile):
         self.oldfile = oldfile
         self.newfile = newfile
+        self._new_lines = None
+
+    def _iter_new_lines(self):
+        """Iterate over the lines that appear to have been added.
+
+        Generate (lineno, line) (with zero-based line numbers and
+        EOL-terminated lines) for the lines that appear to have been
+        added by this change.  (The determination of what has been
+        added is done on the basis of difflib.SequenceMatcher and is
+        somewhat heuristic.)"""
+
+        if self.oldfile is None:
+            # File added; all lines are new:
+            for (i, line) in enumerate(self.newfile.contents.splitlines(True)):
+                yield (i, line)
+        elif self.newfile is not None:
+            oldtext = self.oldfile.contents.splitlines(True)
+            newtext = self.newfile.contents.splitlines(True)
+            diff = difflib.SequenceMatcher(None, oldtext, newtext)
+            for (tag, i1, i2, j1, j2) in diff.get_opcodes():
+                if tag in ['replace', 'insert']:
+                    for j in range(j1, j2):
+                        yield (j, newtext[j])
+        else:
+            # File deleted; no lines added.
+            pass
+
+    @property
+    def new_lines(self):
+        if self._new_lines is None:
+            self._new_lines = list(self._iter_new_lines())
+        return self._new_lines
 
 
 class AbstractGitCommit(Commit):
@@ -607,6 +640,25 @@ class FileCheckAdapter(CommitCheck):
         return ok
 
 
+class NewLinesCheck(FileCheck):
+    """A Check that is purely based on the lines added to the file."""
+
+    def __call__(self, file_change):
+        ok = True
+        for (lineno, line) in file_change.new_lines:
+            ok &= bool(self.check_line(lineno, line))
+
+        if not ok:
+            reporter.warning(self.error_fmt % {'filename' : file_change.newfile.filename})
+
+        return ok
+
+    def check_line(self, lineno, line):
+        """Return True iff line is OK."""
+
+        raise NotImplementedError()
+
+
 class TextCheck(FileCheck):
     """A Check that is purely based on the text of the file."""
 
@@ -678,7 +730,18 @@ class MarkerStringCheck(TextCheck):
         )
 
     def check_text(self, text):
-        return text.find(MARKER_STRING) == -1
+        return MARKER_STRING not in text
+
+
+class NewMarkerStringCheck(NewLinesCheck):
+    """Don't allow changes to be checked in if they add the marker string."""
+
+    error_fmt = 'Marker string ("%s") added to %%(filename)s' % (
+        MARKER_STRING,
+        )
+
+    def check_line(self, lineno, line):
+        return MARKER_STRING not in line
 
 
 class MergeConflictCheck(TextCheck):
@@ -773,7 +836,7 @@ def attribute_then(property, file_check):
 
 
 ATATAT_CHECK = FileCheckAdapter(
-    attribute_then('check-atatat', MarkerStringCheck()),
+    attribute_then('check-atatat', NewMarkerStringCheck()),
     )
 
 

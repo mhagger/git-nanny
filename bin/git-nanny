@@ -186,17 +186,17 @@ def strip_comments(msg):
 
 
 ATATAT_WARNING = """\
-# Files in this commit contain the marker string ('%(MARKER_STRING)s')!
+# This commit adds the marker string ('%(MARKER_STRING)s') to one or more files!
 # If you leave the marker string in this commit message (as on the top
 # line above), the commit will be accepted as a local commit, but it
-# should not be pushed to the central repository.
+# cannot be pushed to the central git repository.
 
 """ % dict(MARKER_STRING=MARKER_STRING)
 
 
 PREPARE_COMMIT_MSG_FAILURE_MESSAGE = """\
 
-Your commit has been rejected because one or more files contain '%(MARKER_STRING)s'.
+Your commit has been rejected because it adds '%(MARKER_STRING)s' to one or more files.
 If you would like to commit anyway, then you must mark the commit as
 'local' by including '%(MARKER_STRING)s' in your commit message.  (But remember,
 such commits cannot be pushed to the central git repository.)
@@ -236,7 +236,7 @@ def prepare_commit_msg(args):
     if MARKER_STRING in strip_comments(msg):
         return
 
-    # See if any files contain MARKER_STRING:
+    # See if any files contain a new MARKER_STRING:
     if ATATAT_CHECK(commit):
         return
 
@@ -259,7 +259,7 @@ def prepare_commit_msg(args):
 
 COMMIT_MSG_FAILURE_MESSAGE = """\
 
-Your commit has been rejected because one or more files contain '%(MARKER_STRING)s'.
+Your commit has been rejected because it adds '%(MARKER_STRING)s' to one or more files.
 If you would like to commit anyway, then you must mark the commit as
 'local' by including '%(MARKER_STRING)s' in your commit message.  (But remember,
 such commits cannot be pushed to the central git repository.)
