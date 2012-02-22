@@ -194,7 +194,7 @@ class AbstractGitCommit(Commit):
                 oldfile = None
 
             if status in ['A', 'M', 'T'] and (dst_mode & 0170000) == 0100000:
-                newfile = FileVersion(self, filename, contents=self.read_contents(filename))
+                newfile = FileVersion(self, filename)
             else:
                 newfile = None
 
