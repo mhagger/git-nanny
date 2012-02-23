@@ -31,6 +31,7 @@ from format_checks import MARKER_STRING
 from format_checks import PRE_COMMIT_CHECKS
 from format_checks import PRE_RECEIVE_CHECKS
 from format_checks import read_updates
+from format_checks import get_new_commits
 
 
 ZEROS = '0' * 40
@@ -343,45 +344,14 @@ def pre_receive(args):
     if args:
         parser.error('Unexpected arguments: %s' % (' '.join(args),))
 
-    updates = list(read_updates(sys.stdin))
+    new_commits = get_new_commits(read_updates(sys.stdin))
 
-    # Determine all of the commits that were added by the updates:
-    cmd = ['git', 'log', '--format=%H %P']
-    cmd += [
-        ('%s' % newrev)
-        for (oldrev, newrev, refname) in updates
-        if newrev is not None
+    # Look for commits that have no parents among the new commits:
+    orphans = [
+        sha1
+        for (sha1, (parents, children)) in new_commits.iteritems()
+        if not parents
         ]
-    cmd += ['--not', '--all']
-    p = subprocess.Popen(
-        cmd, stdout=subprocess.PIPE,
-        )
-
-    # A map {sha1 : (set(parents), set(children))}
-    new_commits = {}
-    for line in p.stdout:
-        words = line.strip().split()
-        new_commits[words[0]] = (set(words[1:]), set())
-
-    retcode = p.wait()
-    if retcode:
-        sys.exit('Error running command: %s' % (' '.join(cmd),))
-
-    # Tell the parents about their children and look for commits that
-    # have no parents among the new commits:
-    orphans = []
-    for (sha1, (parents, children)) in new_commits.iteritems():
-        for parent in list(parents):
-            try:
-                (grandparents, siblings) = new_commits[parent]
-            except KeyError:
-                # The parent must have been an old commit.
-                parents.remove(parent)
-            else:
-                siblings.add(sha1)
-        if not parents:
-            # This commit's parents (if any) are all old commits:
-            orphans.append(sha1)
 
     while orphans:
         sha1 = orphans.pop()

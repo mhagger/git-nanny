@@ -73,6 +73,51 @@ def read_updates(f):
         yield (oldrev, newrev, refname)
 
 
+def get_new_commits(updates):
+    """Determine all of the commits that were added by updates.
+
+    Updates should be an iterable in the form returned by
+    read_updates().  Return a map {sha1 : (set(parents),
+    set(children))}, where the keys are the SHA1s of all of the
+    commits added by the updates, and parents and children are the
+    SHA1s of the parents/children of the given commit that are among
+    the newly-added commits."""
+
+    cmd = ['git', 'log', '--format=%H %P']
+    cmd += [
+        ('%s' % newrev)
+        for (oldrev, newrev, refname) in updates
+        if newrev is not None
+        ]
+    cmd += ['--not', '--all']
+    p = subprocess.Popen(
+        cmd, stdout=subprocess.PIPE,
+        )
+
+    new_commits = {}
+    for line in p.stdout:
+        words = line.strip().split()
+        new_commits[words[0]] = (set(words[1:]), set())
+
+    retcode = p.wait()
+    if retcode:
+        sys.exit('Error running command: %s' % (' '.join(cmd),))
+
+    # Tell the parents about their children:
+    for (sha1, (parents, children)) in new_commits.iteritems():
+        for parent in list(parents):
+            try:
+                (grandparents, siblings) = new_commits[parent]
+            except KeyError:
+                # The parent must have been an old commit; we're not
+                # interested in it:
+                parents.remove(parent)
+            else:
+                siblings.add(sha1)
+
+    return new_commits
+
+
 class Commit(object):
     def get_logmsg(self):
         """Return the log message for this commit.
