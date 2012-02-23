@@ -56,6 +56,23 @@ class MissingContentsException(Exception):
     pass
 
 
+def read_updates(f):
+    """Iterate over (oldrev, newrev, refname) for updates read from f.
+
+    Read from f, which is assumed to be the format passed to the git
+    pre-receive hook.  Output (oldrev, newrev, refname) tuples for
+    each update, where oldrev and newrev are SHA1s or None and refname
+    is the name of the reference being updated."""
+
+    for line in f:
+        (oldrev, newrev, refname) = line.strip().split(' ', 2)
+        if oldrev == ZEROS:
+            oldrev = None
+        if newrev == ZEROS:
+            newrev = None
+        yield (oldrev, newrev, refname)
+
+
 class Commit(object):
     def get_logmsg(self):
         """Return the log message for this commit.

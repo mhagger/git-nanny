@@ -30,6 +30,7 @@ from format_checks import ATATAT_CHECK
 from format_checks import MARKER_STRING
 from format_checks import PRE_COMMIT_CHECKS
 from format_checks import PRE_RECEIVE_CHECKS
+from format_checks import read_updates
 
 
 ZEROS = '0' * 40
@@ -342,14 +343,7 @@ def pre_receive(args):
     if args:
         parser.error('Unexpected arguments: %s' % (' '.join(args),))
 
-    updates = []
-    for line in sys.stdin:
-        (oldrev, newrev, refname) = line.strip().split(' ', 2)
-        if oldrev == ZEROS:
-            oldrev = None
-        if newrev == ZEROS:
-            newrev = None
-        updates.append((oldrev, newrev, refname))
+    updates = list(read_updates(sys.stdin))
 
     # Determine all of the commits that were added by the updates:
     cmd = ['git', 'log', '--format=%H %P']
