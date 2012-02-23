@@ -118,6 +118,38 @@ def get_new_commits(updates):
     return new_commits
 
 
+def topo_sort_commits(commits):
+    """Yield GitCommit objects for the commits in topological order from parent to child.
+
+    commits is a map {sha1 : (set(parents), set(children))} like that
+    returned by get_new_commits().  It is destroyed during this
+    iteration."""
+
+    orphans = [
+        sha1
+        for (sha1, (parents, children)) in commits.iteritems()
+        if not parents
+        ]
+
+    while orphans:
+        sha1 = orphans.pop()
+        (parents, children) = commits.pop(sha1)
+
+        # Extricate the commit from the graph:
+        for parent in parents:
+            (grandparents, siblings) = commits[parent]
+            siblings.remove(sha1)
+        for child in children:
+            (siblings, grandchildren) = commits[child]
+            siblings.remove(sha1)
+            if not siblings:
+                orphans.append(child)
+
+        yield GitCommit(sha1)
+
+    assert not commits
+
+
 class Commit(object):
     def get_logmsg(self):
         """Return the log message for this commit.
