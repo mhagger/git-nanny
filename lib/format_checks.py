@@ -879,6 +879,23 @@ class FilenameCheck(FileCheck):
             )
 
 
+class NoExecCheck(FileCheck):
+    """Check that the new file is not executable."""
+
+    error_fmt = 'File %(filename)s should not be executable'
+
+    def __call__(self, file_change):
+        if file_change.newfile is None:
+            return True
+
+        mode = file_change.newfile.mode
+        if (mode & 0170000) == 0100000 and (mode & 0111):
+            reporter.warning(self.error_fmt % {'filename' : file_change.newfile.filename})
+            return False
+
+        return True
+
+
 class AttributeCheck(FileCheck):
     """A FileCheck that checks a gitattribute."""
 
@@ -942,6 +959,7 @@ ATATAT_CHECK = FileCheckAdapter(
 
 PRE_COMMIT_CHECKS = MultipleCheck(
     FileCheckAdapter(
+        attribute_then('check-noexec', NoExecCheck()),
         attribute_then('check-trailing-ws', TrailingWhitespaceCheck()),
         attribute_then('check-tab', TabCheck()),
         attribute_then('check-cr', CRCheck()),
@@ -957,6 +975,7 @@ PRE_RECEIVE_CHECKS = MultipleCheck(
         LogMarkerStringCheck(),
         ),
     FileCheckAdapter(
+        attribute_then('check-noexec', NoExecCheck()),
         attribute_then('check-trailing-ws', TrailingWhitespaceCheck()),
         attribute_then('check-tab', TabCheck()),
         attribute_then('check-cr', CRCheck()),
