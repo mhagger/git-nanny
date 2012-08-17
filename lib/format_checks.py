@@ -178,8 +178,9 @@ class FileVersion(object):
     sha1 can be None if we are talking about the version of a file in
     the working copy."""
 
-    def __init__(self, filename, attributes=None):
+    def __init__(self, filename, mode, attributes=None):
         self.filename = filename
+        self.mode = mode
         self._attributes = attributes
 
     @property
@@ -190,8 +191,8 @@ class FileVersion(object):
 class ObjectFileVersion(FileVersion):
     """A FileVersion that can be found in a blob in the object database."""
 
-    def __init__(self, filename, sha1, attributes=None):
-        FileVersion.__init__(self, filename, attributes=attributes)
+    def __init__(self, filename, mode, sha1, attributes=None):
+        FileVersion.__init__(self, filename, mode, attributes=attributes)
         self.sha1 = sha1
         self._contents = None
 
@@ -215,8 +216,8 @@ class ObjectFileVersion(FileVersion):
 class CommitFileVersion(FileVersion):
     """A version of a file from a Commit object."""
 
-    def __init__(self, commit, filename, attributes=None):
-        FileVersion.__init__(self, filename, attributes=attributes)
+    def __init__(self, commit, filename, mode, attributes=None):
+        FileVersion.__init__(self, filename, mode, attributes=attributes)
         self.commit = commit
         self._contents = None
 
@@ -357,15 +358,15 @@ class AbstractGitCommit(Commit):
                 sys.exit('Unexpected status %s for file %s' % (status, filename,))
 
             if status in ['M', 'D', 'T'] and (src_mode & 0170000) == 0100000:
-                oldfile = ObjectFileVersion(filename, src_sha1)
+                oldfile = ObjectFileVersion(filename, src_mode, src_sha1)
             else:
                 oldfile = None
 
             if status in ['A', 'M', 'T'] and (dst_mode & 0170000) == 0100000:
                 if dst_sha1 is not None:
-                    newfile = ObjectFileVersion(filename, dst_sha1)
+                    newfile = ObjectFileVersion(filename, dst_mode, dst_sha1)
                 else:
-                    newfile = CommitFileVersion(self, filename)
+                    newfile = CommitFileVersion(self, filename, dst_mode)
             else:
                 newfile = None
 
