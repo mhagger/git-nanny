@@ -276,6 +276,11 @@ class AbstractGitCommit(Commit):
     EMPTY_TREE_SHA1 = '4b825dc642cb6eb9a060e54bf8d69288fbee4904'
 
     def __init__(self, filenames=None):
+        """Create an object representing a git commit.
+
+        If filenames is set, then the commit is made to look like a
+        list of adds of exactly those files."""
+
         self.filenames = filenames
 
     def _get_base(self, committish):
@@ -399,18 +404,19 @@ class AbstractGitCommit(Commit):
     def iter_changes(self, attr_names):
         if self.filenames is None:
             changes = list(self._iter_changes_simple())
-            self.filenames = [
-                change.newfile.filename
-                for change in changes
-                if change.newfile is not None
-                ]
         else:
             changes = [
                 FileChange(None, CommitFileVersion(self, filename))
                 for filename in self.filenames
                 ]
 
-        attributes = self._get_attributes(self.filenames, attr_names)
+        filenames = [
+            change.newfile.filename
+            for change in changes
+            if change.newfile is not None
+            ]
+        attributes = self._get_attributes(filenames, attr_names)
+
         for change in changes:
             if change.newfile is not None:
                 change.newfile._attributes = attributes[change.newfile.filename]
