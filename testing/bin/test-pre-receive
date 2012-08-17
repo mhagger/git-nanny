@@ -41,7 +41,7 @@ chmod +x .git/hooks/commit-msg
 git config user.name "Lou User"
 git config user.email "luser@example.com"
 
-echo '*.txt check-trailing-ws check-atatat' >.gitattributes
+echo '*.txt check-trailing-ws check-atatat check-noexec' >.gitattributes
 echo "0" >a.txt
 git add .gitattributes a.txt
 git commit -m "0"
@@ -64,8 +64,9 @@ for i in $(seq 6 15)
 do
     case "$i" in
         "7")
-            echo '*.txt -check-trailing-ws check-atatat' >.gitattributes
+            echo '*.txt -check-trailing-ws check-atatat check-noexec' >.gitattributes
             echo "2.$i $MARKER_STRING " >a.txt
+            #chmod +x a.txt
             git commit -am "2.$i $MARKER_STRING"
             ;;
         "8")
@@ -81,7 +82,7 @@ do
             git commit -am "2.$i"
             ;;
         *)
-            echo '*.txt check-trailing-ws check-atatat' >.gitattributes
+            echo '*.txt check-trailing-ws check-atatat check-noexec' >.gitattributes
             echo "2.$i" >a.txt
             git commit -am "2.$i"
             ;;
