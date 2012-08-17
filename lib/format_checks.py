@@ -289,6 +289,11 @@ class AbstractGitCommit(Commit):
         If committish doesn't exist, return the SHA1 of the empty
         tree."""
 
+        if self.filenames:
+            # Fake the addition of the files listed in self.filenames
+            # by using the empty tree as a base:
+            return self.EMPTY_TREE_SHA1
+
         p = subprocess.Popen(
             ['git', 'rev-parse', '--verify', committish],
             stdout=subprocess.PIPE, stderr=subprocess.PIPE,
@@ -315,12 +320,6 @@ class AbstractGitCommit(Commit):
         raise NotImplementedError()
 
     def _iter_changes_simple(self):
-        if self.filenames is not None:
-            # Fake a commit that adds the specified files:
-            for filename in self.filenames:
-                yield FileChange(None, CommitFileVersion(self, filename))
-            return
-
         cmd = self._get_diff_command()
         p = subprocess.Popen(
             cmd,
@@ -447,8 +446,8 @@ class GitIndex(AbstractGitCommit):
         return [
             'git', 'diff-index',
             '--cached', '--raw', '--no-renames', '-z',
-            self._get_base('HEAD'),
-            ]
+            self._get_base('HEAD'), '--',
+            ] + (self.filenames or [])
 
     def read_contents(self, filename):
         cmd = ['git', 'cat-file', 'blob', ':%s' % (filename)]
@@ -479,8 +478,8 @@ class GitWorkingTree(AbstractGitCommit):
         return [
             'git', 'diff-index',
             '--raw', '--no-renames', '-z',
-            self._get_base('HEAD'),
-            ]
+            self._get_base('HEAD'), '--',
+            ] + (self.filenames or [])
 
     def read_contents(self, filename):
         try:
@@ -557,8 +556,8 @@ class GitCommit(AbstractGitCommit):
         return [
             'git', 'diff-tree',
             '-r', '--raw', '--no-renames', '-z',
-            self._get_base('%s^' % (self.sha1,)), self.sha1,
-            ]
+            self._get_base('%s^' % (self.sha1,)), self.sha1, '--',
+            ] + (self.filenames or [])
 
     def read_contents(self, filename):
         cmd = ['git', 'cat-file', 'blob', '%s:%s' % (self.sha1, filename)]
