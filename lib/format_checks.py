@@ -315,6 +315,12 @@ class AbstractGitCommit(Commit):
         raise NotImplementedError()
 
     def _iter_changes_simple(self):
+        if self.filenames is not None:
+            # Fake a commit that adds the specified files:
+            for filename in self.filenames:
+                yield FileChange(None, CommitFileVersion(self, filename))
+            return
+
         cmd = self._get_diff_command()
         p = subprocess.Popen(
             cmd,
@@ -402,13 +408,7 @@ class AbstractGitCommit(Commit):
         return attributes
 
     def iter_changes(self, attr_names):
-        if self.filenames is None:
-            changes = list(self._iter_changes_simple())
-        else:
-            changes = [
-                FileChange(None, CommitFileVersion(self, filename))
-                for filename in self.filenames
-                ]
+        changes = list(self._iter_changes_simple())
 
         filenames = [
             change.newfile.filename
