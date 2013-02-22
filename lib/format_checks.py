@@ -745,35 +745,35 @@ class CommitCheck(Check):
         raise NotImplementedError()
 
 
-class LogMessageCheck(Check):
-    """A check that a log message is OK."""
+class MetadataCheck(Check):
+    """A check that the metadata are OK."""
 
-    def __call__(self, logmsg, silent=False):
+    def __call__(self, metadata, silent=False):
         """Return True iff commit passes test."""
 
         raise NotImplementedError()
 
 
-class LogMessageCheckAdapter(CommitCheck):
-    """A CommitCheck that is a MultipleCheck over LogMessageChecks."""
+class MetadataCheckAdapter(CommitCheck):
+    """A CommitCheck that is a MultipleCheck over MetadataChecks."""
 
-    def __init__(self, *log_message_checks):
-        self.log_message_check = MultipleCheck(*log_message_checks)
+    def __init__(self, *metadata_checks):
+        self.metadata_check = MultipleCheck(*metadata_checks)
 
     def __call__(self, commit, silent=False):
         try:
-            logmsg = commit.get_logmsg()
+            metadata = commit.get_metadata()
         except NotImplementedError:
             return True
         else:
-            return self.log_message_check(logmsg, silent=silent)
+            return self.metadata_check(metadata, silent=silent)
 
 
-class LogMarkerStringCheck(LogMessageCheck):
+class LogMarkerStringCheck(MetadataCheck):
     """Don't allow a log message that includes the marker string."""
 
-    def __call__(self, logmsg, silent=False):
-        ok = MARKER_STRING not in logmsg
+    def __call__(self, metadata, silent=False):
+        ok = MARKER_STRING not in metadata.logmsg
         if not ok and not silent:
             reporter.warning('Log message contains marker string ("%s")' % (MARKER_STRING,))
         return ok
@@ -1033,7 +1033,7 @@ PRE_COMMIT_CHECKS = MultipleCheck(
 
 
 PRE_RECEIVE_CHECKS = MultipleCheck(
-    LogMessageCheckAdapter(
+    MetadataCheckAdapter(
         LogMarkerStringCheck(),
         ),
     FileCheckAdapter(
