@@ -150,7 +150,80 @@ def topo_sort_commits(commits):
     assert not commits
 
 
+class InvalidDataError(Exception):
+    pass
+
+
+class GitAuthorInfo(object):
+    """Author or committer information for a Git commit."""
+
+    AUTHOR_RE = re.compile(
+        r"""
+        ^
+        (?:author|committer)
+        \s
+        (?P<name>[^\<]*)
+        \s
+        \<(?P<email>[^\>]*)\>
+        \s
+        (?P<date>.*)
+        $
+        """,
+        re.VERBOSE,
+        )
+
+    def __init__(self, line):
+        m = self.AUTHOR_RE.match(line.strip())
+        if not m:
+            raise InvalidDataError('Line cannot be parsed: %r' % (line,))
+        self.name = m.group('name')
+        self.email = m.group('email')
+        self.date = m.group('date')
+
+
+class GitCommitMetadata(object):
+    def __init__(self, sha1):
+        cmd = ['git', 'cat-file', 'commit', sha1]
+        p = subprocess.Popen(
+            cmd,
+            stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+            )
+        (out, err) = p.communicate()
+        retcode = p.wait()
+        if retcode or err:
+            sys.exit('Command failed: %s' % (' '.join(cmd),))
+
+        # The log message follows the first blank line:
+        log_message_index = out.index('\n\n') + 2
+        self.logmsg = out[log_message_index:]
+
+        # Everything before that is header lines:
+        self.author = self.committer = None
+        for line in out[:log_message_index - 1].splitlines():
+            (id, rest) = line.split(' ', 1)
+            if id == 'tree':
+                pass
+            elif id == 'parent':
+                pass
+            elif id == 'author':
+                assert self.author is None
+                self.author = GitAuthorInfo(line)
+            elif id == 'committer':
+                assert self.committer is None
+                self.committer = GitAuthorInfo(line)
+
+        assert self.author and self.committer
+
+
 class Commit(object):
+    def get_metadata(self):
+        """Return a GitCommitMetadata object for this commit.
+
+        If metadata are not available for this type of Commit, raise
+        NotImplementedError."""
+
+        raise NotImplementedError()
+
     def get_logmsg(self):
         """Return the log message for this commit.
 
@@ -158,7 +231,7 @@ class Commit(object):
         a log message is not available for this type of Commit, raise
         NotImplementedError."""
 
-        raise NotImplementedError()
+        return self.get_metadata().logmsg
 
     def iter_changes(self, attr_names):
         """Iterate over the FileChanges in this Commit.
@@ -497,12 +570,17 @@ class GitCommit(AbstractGitCommit):
         AbstractGitCommit.__init__(self, filenames)
         self.sha1 = sha1
         self.indexfile = None
-        self._logmsg = None
+        self._metadata = None
 
     def __del__(self):
         if self.indexfile:
             os.remove(self.indexfile)
             self.indexfile = None
+
+    def get_metadata(self):
+        if self._metadata is None:
+            self._metadata = GitCommitMetadata(self.sha1)
+        return self._metadata
 
     def get_indexfile(self):
         if self.indexfile is None:
@@ -518,22 +596,6 @@ class GitCommit(AbstractGitCommit):
                 sys.exit('Command failed: %s' % (' '.join(cmd),))
 
         return self.indexfile
-
-    def get_logmsg(self):
-        if self._logmsg is None:
-            cmd = ['git', 'cat-file', 'commit', self.sha1]
-            p = subprocess.Popen(
-                cmd,
-                stdout=subprocess.PIPE, stderr=subprocess.PIPE,
-                )
-            (out, err) = p.communicate()
-            retcode = p.wait()
-            if retcode or err:
-                sys.exit('Command failed: %s' % (' '.join(cmd),))
-            # The log message follows the first blank line:
-            self._logmsg = out[out.index('\n\n') + 2:]
-
-        return self._logmsg
 
     def _get_attributes_pipe(self, attr_names):
         if GIT_CHECK_ATTR_CACHED:
